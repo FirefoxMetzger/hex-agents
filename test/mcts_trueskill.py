@@ -57,17 +57,16 @@ def play_match(agent1, agent2):
 
 def find_match(player1, agent_pool):
     match_quality = list()
+    eligable_opponent = list()
     for agent in agent_pool:
         if agent == player1:
-            match_quality.append(0)
+            continue
         else:
             match_quality.append(trueskill.quality_1vs1(player1.rating,
                                                         agent.rating))
-    match_quality = np.array(match_quality)
-    best_match_cutoff = np.minimum(np.max(match_quality), 0.5)
-    best_matches = np.where(match_quality >= best_match_cutoff)[0]
-    player2_idx = np.random.choice(best_matches)
-    return agent_pool[player2_idx]
+            eligable_opponent.append(agent)
+    match_quality = np.exp(match_quality)/sum(np.exp(match_quality))
+    return np.random.choice(eligible_opponent, p=match_quality)
 
 
 trueskill.setup(mu=1200,
@@ -78,7 +77,7 @@ trueskill.setup(mu=1200,
                 backend="scipy")
 agent_pool = [Agent(depth=d) for d in [100, 500, 1000, 1500]]
 agent_pool += [RandomAgent()]
-for game_idx in range(500):
+for game_idx in range(100):
     # pick the agent we are most uncertain about
     sigmas = [agent.rating.sigma for agent in agent_pool]
     player1_idx = np.argmax(sigmas)
@@ -92,7 +91,7 @@ for game_idx in range(500):
                          key=lambda x: trueskill.expose(x.rating),
                          reverse=True)
     for agent in leaderboard:
-        print(f"    {agent} mu:{agent.rating.mu} sigma:{agent.rating.sigma}")
+        print(f"    {agent} mu:{agent.rating.mu:.2f} sigma:{agent.rating.sigma:.2f}")
 
 ratings = {str(agent): {"mu": agent.rating.mu, "sigma": agent.rating.sigma}
            for agent in agent_pool}
