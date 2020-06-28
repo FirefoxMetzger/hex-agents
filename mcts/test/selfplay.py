@@ -2,21 +2,14 @@ import gym
 import minihex
 import numpy as np
 from mcts.MCTSAgent import MCTSAgent
-from minihex.HexGame import HexGame, player
 
-
-def mcts_policy(state, active_player):
-    # never surrender :)
-    env = HexGame(active_player, state, active_player)
-    agent = MCTSAgent(env)
-    return agent.plan(1000)
 
 env = gym.make("hex-v0", opponent_policy=None, board_size=9)
 state = env.reset()
 hexgame = env.simulator
 
-opponent = MCTSAgent(env.simulator, depth=50)
-agent = MCTSAgent(env.simulator, depth=50)
+opponent = MCTSAgent(env.simulator, depth=500)
+agent = MCTSAgent(env.simulator, depth=500)
 env = gym.make("hex-v0", opponent_policy=opponent.act, board_size=9)
 state = env.reset()
 info = {
@@ -29,7 +22,6 @@ done = False
 while not done:
     action = agent.act(state[0], state[1], info)
     state, reward, done, info = env.step(action)
-    print("stepped")
 
 env.render()
 

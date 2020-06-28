@@ -37,7 +37,8 @@ class MCTSAgent(Agent):
     def act(self, state, active_player, info):
         self.update_root_state(state, info)
         self.plan(self.depth)
-        return self.policy()
+        action = self.policy()
+        return action
 
     def plan(self, num_simulations=100):
         for _ in range(num_simulations):
@@ -63,13 +64,6 @@ class MCTSAgent(Agent):
         last_move = info["last_move_player"]
         last_opponent_move = info["last_move_opponent"]
 
-        # if last_move is None and last_opponent_move is None:
-        #     self.root_node.expand(action)
-        #     active_player = self.root_node.env.active_player
-        #     player = self.root_node.env.player
-        #     env = HexGame(active_player, state, player)
-        #     self.root_node = SearchNode(env)
-
         if last_move is not None:
             if last_move not in self.root_node.children:
                 self.root_node.expand(last_move)
@@ -79,22 +73,3 @@ class MCTSAgent(Agent):
             if last_opponent_move not in self.root_node.children:
                 self.root_node.expand(last_opponent_move)
             self.root_node = self.root_node.children[last_opponent_move]
-
-
-if __name__ == "__main__":
-    import gym
-    import minihex
-
-    board_size = 5
-    board = np.zeros((3, board_size+4, board_size+4))
-    board[player.BLACK, :2, :] = 1
-    board[player.BLACK, -2:, :] = 1
-    board[player.WHITE, :, :2] = 1
-    board[player.WHITE, :, -2:] = 1
-    board[2, 2:-2, 2:-2] = 1
-
-    env = HexGame(player.BLACK, board, player.BLACK)
-    agent = MCTSAgent(env)
-    print(agent.plan())
-    print(agent.quality())
-    import pdb; pdb.set_trace()
