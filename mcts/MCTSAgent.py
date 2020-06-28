@@ -3,11 +3,14 @@ from copy import deepcopy
 import numpy as np
 from minihex.HexGame import HexGame
 from minihex import player
+from Agent import Agent
 
 
-class MCTSAgent(object):
-    def __init__(self, env):
+class MCTSAgent(Agent):
+    def __init__(self, env, depth=1000):
+        super(MCTSAgent, self).__init__()
         self.root_node = SearchNode(env)
+        self.depth = depth
 
     def add_leaf(self):
         history = [self.root_node]
@@ -31,6 +34,11 @@ class MCTSAgent(object):
         for node in reversed(history):
             node.backup(reward)
 
+    def act(self, state, active_player, info):
+        self.update_root_state(state, info)
+        self.plan(self.depth)
+        return self.policy()
+
     def plan(self, num_simulations=100):
         for _ in range(num_simulations):
             self.add_leaf()
@@ -51,11 +59,26 @@ class MCTSAgent(object):
 
         return np.array(qualities)
 
-    def update_root_state(self, state):
-        active_player = self.root_node.env.active_player
-        player = self.root_node.env.player
-        env = HexGame(active_player, state, player)
-        self.root_node = SearchNode(env)
+    def update_root_state(self, state, info):
+        last_move = info["last_move_player"]
+        last_opponent_move = info["last_move_opponent"]
+
+        # if last_move is None and last_opponent_move is None:
+        #     self.root_node.expand(action)
+        #     active_player = self.root_node.env.active_player
+        #     player = self.root_node.env.player
+        #     env = HexGame(active_player, state, player)
+        #     self.root_node = SearchNode(env)
+
+        if last_move is not None:
+            if last_move not in self.root_node.children:
+                self.root_node.expand(last_move)
+            self.root_node = self.root_node.children[last_move]
+
+        if last_opponent_move is not None:
+            if last_opponent_move not in self.root_node.children:
+                self.root_node.expand(last_opponent_move)
+            self.root_node = self.root_node.children[last_opponent_move]
 
 
 if __name__ == "__main__":
