@@ -2,145 +2,104 @@ import numpy as np
 from mcts.MCTSAgent import MCTSAgent
 import gym
 from minihex import player
-from minihex.HexGame import HexGame
+from minihex.HexGame import HexGame, player
 import minihex
 import tqdm
 from enum import IntEnum
-
-
-class Side(IntEnum):
-    NORTH = 0
-    EAST = 1
-    SOUTH = 2
-    WEST = 3
-
-
-def flood_fill(board, position, side, connected_stones=None):
-    connections = np.array([[-1, -1,  0,  0,  1,  1],
-                            [0,   1, -1,  1, -1,  0]])
-
-    if connected_stones is None:
-        connected_stones = np.zeros_like(board)
-
-    positions_to_test = [position]
-    while len(positions_to_test) > 0:
-        current_position = positions_to_test.pop()
-
-        if board[current_position] == 0:
-            continue
-
-        if connected_stones[current_position] == 1:
-            continue
-
-        neighbours = list()
-        check_neighbours = False
-        for direction in connections.T:
-            neighbour_position = tuple(current_position + direction)
-
-            if np.all(neighbour_position) == board.shape[1]:
-                if side == Side.SOUTH or side == Side.EAST:
-                    check_neighbours = True
-                    connected_stones[current_position] = 1
-                continue
-            elif np.all(neighbour_position) < 0:
-                if side == side.NORTH or side == Side.WEST:
-                    check_neighbours = True
-                    connected_stones[current_position] = 1
-                continue
-            elif neighbour_position[0] < 0:
-                if side == Side.NORTH:
-                    check_neighbours = True
-                    connected_stones[current_position] = 1
-                continue
-            elif neighbour_position[1] >= board.shape[1]:
-                if side == Side.EAST:
-                    check_neighbours = True
-                    connected_stones[current_position] = 1
-                continue
-            elif neighbour_position[0] >= board.shape[1]:
-                if side == Side.SOUTH:
-                    check_neighbours = True
-                    connected_stones[current_position] = 1
-                continue
-            elif neighbour_position[1] < 0:
-                if side == Side.WEST:
-                    check_neighbours = True
-                    connected_stones[current_position] = 1
-                continue
-
-            if board[neighbour_position] == 1:
-                neighbours.append(neighbour_position)
-
-            if connected_stones[neighbour_position] == 1:
-                connected_stones[current_position] = 1
-                check_neighbours = True
-
-        if check_neighbours:
-            positions_to_test += neighbours
-
-    return connected_stones
+from copy import deepcopy
+from multiprocessing import Pool, cpu_count
 
 
 def convert_state(state):
-    game_state, active_player = state
-    board_size = game_state.shape[1]
+    board = state.board
+    board_size = board.shape[1]
+    converted_state = np.zeros((6, board_size+4, board_size+4))
 
-    black_stones = game_state[player.BLACK, ...]
-    white_stones = game_state[player.WHITE, ...]
+    converted_state[[0, 2], :2, :] = 1
+    converted_state[[0, 3], -2:, :] = 1
+    converted_state[[1, 4], :, :2] = 1
+    converted_state[[1, 5], :, -2:] = 1
 
-    black_north = np.zeros_like(black_stones)
-    black_south = np.zeros_like(black_stones)
-    white_west = np.zeros_like(white_stones)
-    white_east = np.zeros_like(white_stones)
+    converted_state[:2, 2:-2, 2:-2] = board[:2, ...]
 
-    for idx in range(board_size):
-        black_north = flood_fill(black_stones, (0, idx), Side.NORTH, black_north)
-        black_south = flood_fill(black_stones, (board_size - 1, idx), Side.SOUTH, black_south)
-        white_west = flood_fill(white_stones, (idx, 0), Side.WEST, white_west)
-        white_east = flood_fill(white_stones, (idx, board_size - 1), Side.EAST, white_east)
+    region_black = np.pad(state.regions[player.BLACK], 1)
+    region_white = np.pad(state.regions[player.WHITE], 1)
 
-    converted_state = np.stack([
-        black_stones,
-        white_stones,
-        black_north,
-        black_south,
-        white_west,
-        white_east
-    ], axis=0)
+    positions = np.where(region_black == region_black[1, 1])
+    converted_state[2][positions] = 1
 
-    return converted_state
+    positions = np.where(region_black == region_black[-2, -2])
+    converted_state[3][positions] = 1
+
+    positions = np.where(region_white == region_white[1, 1])
+    converted_state[4][positions] = 1
+
+    positions = np.where(region_white == region_white[-2, -2])
+    converted_state[5][positions] = 1
+
+    return np.moveaxis(converted_state, 0, -1)
 
 
-def play_match(agent1, agent2):
+def play_match(agent, opponent, sim=None):
+    color = player.WHITE if np.random.rand() > 0.5 else player.BLACK
     env = gym.make("hex-v0",
-                   opponent_policy=agent2.policy,
-                   player_color=np.random.randint(2))
-    state = env.reset()
+                   opponent_policy=opponent.act,
+                   board_size=5,
+                   player_color=color)
+    state, info = env.reset()
 
     history = list()
     done = False
     while not done:
-        action = agent1.policy(*state)
-        history.append((state, action))
-
-        state, reward, done, _ = env.step(action)
+        action = agent.act(state[0], state[1], info)
+        history.append((deepcopy(env), action))
+        state, reward, done, info = env.step(action)
 
     random_element = np.random.randint(len(history))
     state, action = history[random_element]
-    return convert_state(state), action
+    if color == player.BLACK:
+        return convert_state(state), (action, -1)
+    else:
+        return convert_state(state), (-1, action)
 
 
-class Agent(object):
-    def __init__(self, depth=1000):
-        self.depth = depth
+def generate_sample(idx):
+    # generate a random board state
+    num_white_stones = np.random.randint(5 ** 2 // 2)
+    if np.random.rand() > 0.5:
+        num_black_stones = num_white_stones + 1
+        active_player = player.WHITE
+    else:
+        num_black_stones = num_white_stones
+        active_player = player.BLACK
+    positions = np.random.rand(5, 5)
+    ny, nx = np.unravel_index(np.argsort(positions.flatten()), (5,5))
+    white_y = ny[:num_white_stones]
+    white_x = nx[:num_white_stones]
+    black_y = ny[num_white_stones:num_white_stones+num_black_stones]
+    black_x = nx[num_white_stones:num_white_stones+num_black_stones]
+    board = np.zeros((3, 5, 5))
+    board[2, ...] = 1
+    board[player.WHITE, white_y, white_x] = 1
+    board[2, white_y, white_x] = 0
+    board[player.BLACK, black_y, black_x] = 1
+    board[2, black_y, black_x] = 0
+    
+    # instantiate expert at the generated position and query
+    # expert action
+    sim = HexGame(active_player, board, active_player)
+    agent = MCTSAgent(sim, depth=1000)
 
-    def policy(self, state, active_player):
-        env = HexGame(active_player, state, active_player)
-        agent = MCTSAgent(env)
-        return agent.plan(self.depth)
-
-    def __str__(self):
-        return f"MCTS({self.depth})"
+    info = {
+        'state': board,
+        'last_move_opponent': None,
+        'last_move_player': None
+    }
+    action = agent.act(board, active_player, info)
+    if active_player == player.BLACK:
+        return convert_state(sim), (action, -1)
+    else:
+        return convert_state(sim), (-1, action)
 
 
 def generate_dataset(num_examples, prefix=None):
@@ -149,17 +108,24 @@ def generate_dataset(num_examples, prefix=None):
     else:
         prefix += "_"
 
-    agent = Agent(depth=1000)
+    env = gym.make("hex-v0", opponent_policy=None, board_size=5)
+    state = env.reset()
+    hexgame = env.simulator
 
     dataset = list()
     labels = list()
-    for sample in tqdm.tqdm(range(num_examples)):
-        position, action = play_match(agent, agent)
-        board = position[1, ...]
-        pos = np.unravel_index(action, board.shape)
-        assert np.all(position[:2, pos[0], pos[1]]) == 0
-        dataset.append(position)
-        labels.append(action)
+    # for _ in range(12):
+    #     return_val = generate_sample(0)
+    # import pdb; pdb.set_trace()
+    with Pool(cpu_count() - 2) as workers:
+        return_val = list(tqdm.tqdm(workers.imap(
+                                        generate_sample,
+                                        [hexgame for _ in range(num_examples)],
+                                        chunksize=512),
+                                    total=num_examples))
+    for example, label in return_val:
+        dataset.append(example)
+        labels.append(label)
 
     with open(f"{prefix}data.npy", "wb") as out_file:
         np.save(out_file, np.stack(dataset, axis=0))
@@ -167,6 +133,7 @@ def generate_dataset(num_examples, prefix=None):
         np.save(out_file, np.stack(labels, axis=0))
 
 
-generate_dataset(100, prefix="training")
-generate_dataset(10, prefix="validation")
-generate_dataset(10, prefix="test")
+if __name__ == "__main__":
+    generate_dataset(100000, prefix="training")
+    generate_dataset(3000, prefix="validation")
+    generate_dataset(3000, prefix="test")
