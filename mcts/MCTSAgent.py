@@ -18,9 +18,10 @@ class MCTSAgent(Agent):
         # select
         while True:
             node = history[-1]
+            if node.is_terminal:
+                action = None
+                break
             action = node.select()
-            if action is None:
-                return
             if action in node.children:
                 history.append(node.children[action])
             else:
@@ -44,8 +45,6 @@ class MCTSAgent(Agent):
         for _ in range(num_simulations):
             self.add_leaf()
 
-        return self.policy()
-
     def policy(self):
         qualities = self.quality()
         max_value = np.max(qualities)
@@ -57,7 +56,6 @@ class MCTSAgent(Agent):
         for action in self.root_node.available_actions:
             qualities.append(self.root_node.action_value(action,
                                                          is_greedy=is_greedy))
-
         return np.array(qualities)
 
     def update_root_state(self, state, info):
@@ -73,3 +71,12 @@ class MCTSAgent(Agent):
             if last_opponent_move not in self.root_node.children:
                 self.root_node.expand(last_opponent_move)
             self.root_node = self.root_node.children[last_opponent_move]
+
+    def belief_matrix(self):
+        quality = self.quality()
+        board_shape = self.root_node.env.board[0, ...].shape
+        positions = np.unravel_index(self.root_node.available_actions,
+                                     self.root_node.env.board[0, ...].shape)
+        win_prop = -1 * np.ones(board_shape)
+        win_prop[positions[0], positions[1]] = quality
+        return win_prop[2:-2, 2:-2]
