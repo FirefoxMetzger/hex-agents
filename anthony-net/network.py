@@ -29,7 +29,7 @@ class HexagonalInitializer(tf.keras.initializers.GlorotUniform):
 
 def selective_loss(y_true, y_pred):
     factor = tf.reduce_sum(y_true, axis=-1)
-    return factor * loss_CAT(y_true, y_pred)
+    return factor * tf.keras.losses.KLD(y_true, y_pred)
 
 
 def gen_model(board_size, policy_head=True, value_head=False):

@@ -24,9 +24,6 @@ training_data, training_labels = load_data("training")
 validation_data, validation_labels = load_data("validation")
 test_data, test_labels = load_data("test")
 
-loss_CAT = tf.keras.losses.KLD
-
-
 network = gen_model(5)
 network.compile(
     optimizer=tf.keras.optimizers.Adam(),
