@@ -13,33 +13,16 @@ class MCTSAgent(Agent):
         self.depth = depth
 
     def add_leaf(self):
-        history = [self.root_node]
-
-        # select
-        while True:
-            node = history[-1]
-            if node.is_terminal:
-                action = None
-                break
-            action = node.select()
-            if action in node.children:
-                history.append(node.children[action])
-            else:
-                break
-
-        node = node.expand(action)
-        history.append(node)
-
-        reward = node.simulate()
-
-        for node in reversed(history):
-            node.backup(reward)
+        self.root_node.add_leaf()
 
     def act(self, state, active_player, info):
         self.update_root_state(state, info)
         self.plan(self.depth)
         action = self.policy()
         return action
+
+    def reset(self, env):
+        self.root_node = SearchNode(env)
 
     def plan(self, num_simulations=100):
         for _ in range(num_simulations):
@@ -50,7 +33,8 @@ class MCTSAgent(Agent):
         max_value = np.max(qualities)
         action_fn = self.root_node.available_actions
         valid_actions = action_fn[qualities == max_value]
-        return np.random.choice(valid_actions)
+        idx = np.random.randint(len(valid_actions))
+        return valid_actions[idx]
 
     def quality(self, is_greedy=True):
         qualities = list()
@@ -81,3 +65,6 @@ class MCTSAgent(Agent):
         win_prop = -1 * np.ones(board_shape)
         win_prop[positions[0], positions[1]] = quality
         return win_prop[2:-2, 2:-2]
+
+    def __str__(self):
+        return f"MCTS({self.depth})"
