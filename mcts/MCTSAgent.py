@@ -48,7 +48,8 @@ class MCTSAgent(Agent):
     def policy(self):
         qualities = self.quality()
         max_value = np.max(qualities)
-        valid_actions = self.root_node.available_actions[qualities == max_value]
+        action_fn = self.root_node.available_actions
+        valid_actions = action_fn[qualities == max_value]
         return np.random.choice(valid_actions)
 
     def quality(self, is_greedy=True):
