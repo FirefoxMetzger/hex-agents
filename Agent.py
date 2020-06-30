@@ -1,4 +1,4 @@
-from minihex.HexGame import HexGame, player
+from minihex import HexGame, player, random_policy
 import trueskill
 import numpy as np
 
@@ -10,17 +10,19 @@ class Agent(object):
     def act(self, state, active_player, info=None):
         raise NotImplementedError()
 
+    def reset(self, state):
+        raise NotImplementedError()
+
     def __str__(self):
         return f"Abstract Agent"
 
 
 class RandomAgent(Agent):
-    def act(self, state, active_player):
-        board = state
-        coords = np.where(board[2, ...] == 1)
-        idx = np.ravel_multi_index(coords, board.shape[1:])
-        choice = np.random.randint(len(idx))
-        return idx[choice]
+    def act(self, state, active_player, info):
+        return random_policy(state, active_player, info)
+
+    def reset(self, env):
+        return
 
     def __str__(self):
         return "Random"
