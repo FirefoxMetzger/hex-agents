@@ -1,8 +1,7 @@
 import numpy as np
 from mcts.MCTSAgent import MCTSAgent
 import gym
-from minihex import player
-from minihex.HexGame import HexGame, player
+from minihex import player, HexGame
 import minihex
 import tqdm
 from enum import IntEnum
@@ -73,7 +72,7 @@ def generate_sample(idx):
         num_black_stones = num_white_stones
         active_player = player.BLACK
     positions = np.random.rand(5, 5)
-    ny, nx = np.unravel_index(np.argsort(positions.flatten()), (5,5))
+    ny, nx = np.unravel_index(np.argsort(positions.flatten()), (5, 5))
     white_y = ny[:num_white_stones]
     white_x = nx[:num_white_stones]
     black_y = ny[num_white_stones:num_white_stones+num_black_stones]
@@ -84,7 +83,7 @@ def generate_sample(idx):
     board[2, white_y, white_x] = 0
     board[player.BLACK, black_y, black_x] = 1
     board[2, black_y, black_x] = 0
-    
+
     # instantiate expert at the generated position and query
     # expert action
     sim = HexGame(active_player, board, active_player)
