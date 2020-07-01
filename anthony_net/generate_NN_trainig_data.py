@@ -37,12 +37,7 @@ def generate_sample(board_size=5):
     return convert_state(sim), active_player
 
 
-def generate_dataset(num_examples, prefix=None, batch_size=32):
-    if prefix is None:
-        prefix = ""
-    else:
-        prefix += "_"
-
+def generate_dataset(num_examples, batch_size=32):
     num_batches = num_examples // batch_size + 1
     agent = NNAgent('best_model.h5')
 
@@ -59,13 +54,12 @@ def generate_dataset(num_examples, prefix=None, batch_size=32):
 
     labels = agent.predict(dataset, active_player)
 
-    with open(f"{prefix}data.npy", "wb") as out_file:
-        np.save(out_file, dataset)
-    with open(f"{prefix}labels.npy", "wb") as out_file:
-        np.save(out_file, labels)
+    return dataset, labels
 
 
 if __name__ == "__main__":
-    generate_dataset(100000, prefix="training")
-    # generate_dataset(3000, prefix="validation")
-    # generate_dataset(3000, prefix="test")
+    dataset, labels = generate_dataset(100000)
+    with open(f"training_data.npy", "wb") as out_file:
+        np.save(out_file, dataset)
+    with open(f"training_labels.npy", "wb") as out_file:
+        np.save(out_file, labels)
