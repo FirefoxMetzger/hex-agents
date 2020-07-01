@@ -6,12 +6,13 @@ import minihex
 import tqdm
 from multiprocessing import Pool, cpu_count
 from utils import convert_state
+import random
 
 
 def generate_sample(idx, board_size=5):
     # generate a random board state
     num_white_stones = np.random.randint(board_size ** 2 // 2)
-    if np.random.rand() > 0.5:
+    if random.random() > 0.5:
         num_black_stones = num_white_stones + 1
         active_player = player.WHITE
     else:

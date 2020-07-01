@@ -1,7 +1,12 @@
 import numpy as np
-from minihex import empty_tiles, player
-from minihex.HexGame import HexGame
+from minihex import player
+from minihex.HexGame import HexGame, HexEnv
+import minihex
+import gym
 from copy import deepcopy
+from Agent import RandomAgent
+import random
+
 
 VALUE_CONSTANT = np.sqrt(2)
 
@@ -19,6 +24,7 @@ class SearchNode(object):
                                          dtype=np.float32)
         self.Q = np.inf * np.ones(board_size ** 2,
                                   dtype=np.float32)
+        self.agent = RandomAgent()
 
     def add_leaf(self):
         if self.is_terminal:
@@ -51,7 +57,7 @@ class SearchNode(object):
     def select(self):
         action_scores = self.Q[self.available_actions]
         best_actions = np.where(action_scores == np.max(action_scores))[0]
-        idx = np.random.randint(len(best_actions))
+        idx = int(random.random() * len(best_actions))
         best_action_idx = best_actions[idx]
         return self.available_actions[best_action_idx]
 
@@ -60,17 +66,24 @@ class SearchNode(object):
         new_env.make_move(action)
         child = SearchNode(new_env)
         self.children[action] = child
+
         return child
 
     def simulate(self):
-        sim_env = deepcopy(self.env)
-        while not sim_env.done:
-            valid_moves = sim_env.get_possible_actions()
-            idx = np.random.randint(len(valid_moves))
-            action = valid_moves[idx]
-            winner = sim_env.make_move(action)
+        env = HexEnv(
+            opponent_policy=self.agent.act,
+            player_color=self.env.active_player,
+            active_player=self.env.active_player,
+            board=self.env.board.copy(),
+            regions=self.env.regions.copy())
 
-        return sim_env.winner
+        state, info = env.reset()
+        done = False
+        while not done:
+            action = self.agent.act(state[0], state[1], info)
+            state, reward, done, info = env.step(action)
+
+        return env.simulator.winner
 
     def backup(self, winner, action=None):
         self.total_simulations += 1

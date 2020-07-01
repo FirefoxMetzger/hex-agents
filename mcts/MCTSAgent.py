@@ -1,9 +1,9 @@
 from mcts.SearchNode import SearchNode
-from copy import deepcopy
 import numpy as np
 from minihex.HexGame import HexGame
 from minihex import player
 from Agent import Agent
+import random
 
 
 class MCTSAgent(Agent):
@@ -11,9 +11,6 @@ class MCTSAgent(Agent):
         super(MCTSAgent, self).__init__()
         self.root_node = SearchNode(env)
         self.depth = depth
-
-    def add_leaf(self):
-        self.root_node.add_leaf()
 
     def act(self, state, active_player, info):
         self.update_root_state(state, info)
@@ -26,14 +23,14 @@ class MCTSAgent(Agent):
 
     def plan(self, num_simulations=100):
         for _ in range(num_simulations):
-            self.add_leaf()
+            self.root_node.add_leaf()
 
     def policy(self):
         qualities = self.quality()
         max_value = np.max(qualities)
         action_fn = self.root_node.available_actions
         valid_actions = action_fn[qualities == max_value]
-        idx = np.random.randint(len(valid_actions))
+        idx = int(random.random() * len(valid_actions))
         return valid_actions[idx]
 
     def quality(self, is_greedy=True):

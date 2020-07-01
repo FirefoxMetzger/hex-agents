@@ -1,10 +1,10 @@
 from Agent import Agent
 import tensorflow as tf
 from minihex import player, HexGame
-from network import HexagonalInitializer, HexagonalConstraint, selective_loss
+from anthony_net.network import HexagonalInitializer, HexagonalConstraint, selective_loss
 import gym
 import numpy as np
-from utils import convert_state
+from anthony_net.utils import convert_state
 
 
 class NNAgent(Agent):
