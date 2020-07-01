@@ -30,6 +30,14 @@ class NNAgent(Agent):
         greedy_action = np.argmax(action_values)
         return available_actions[greedy_action]
 
+    def predict(self, state_batch, active_player_batch):
+        policy_values = self.model.predict(state_batch)
+        actions = np.argmax(policy_values, axis=2)
+        actions[player.WHITE, active_player_batch == player.BLACK] = -1
+        actions[player.BLACK, active_player_batch == player.WHITE] = -1
+        actions = actions.T
+        return actions
+
 
 if __name__ == "__main__":
     agent = NNAgent('best_model.h5')
