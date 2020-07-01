@@ -12,9 +12,6 @@ class MCTSAgent(Agent):
         self.root_node = SearchNode(env)
         self.depth = depth
 
-    def add_leaf(self):
-        self.root_node.add_leaf()
-
     def act(self, state, active_player, info):
         self.update_root_state(state, info)
         self.plan(self.depth)
@@ -26,7 +23,7 @@ class MCTSAgent(Agent):
 
     def plan(self, num_simulations=100):
         for _ in range(num_simulations):
-            self.add_leaf()
+            self.root_node.add_leaf()
 
     def policy(self):
         qualities = self.quality()
