@@ -48,27 +48,23 @@ def generate_sample(idx, board_size=5):
         return convert_state(sim), (-1, action)
 
 
-def generate_dataset(num_examples, prefix=None):
+def generate_dataset(num_examples, prefix=None, board_size=5):
     if prefix is None:
         prefix = ""
     else:
         prefix += "_"
 
-    env = gym.make("hex-v0", opponent_policy=None, board_size=5)
-    state = env.reset()
+    env = gym.make("hex-v0", opponent_policy=None, board_size=board_size)
+    env.reset()
     hexgame = env.simulator
 
     dataset = list()
     labels = list()
-    for _ in range(100):
-        return_val = generate_sample(0)
-    return
-
     with Pool(cpu_count() - 2) as workers:
         return_val = list(tqdm.tqdm(workers.imap(
                                         generate_sample,
                                         [hexgame for _ in range(num_examples)],
-                                        chunksize=512),
+                                        chunksize=3),
                                     total=num_examples))
     for example, label in return_val:
         dataset.append(example)
@@ -81,6 +77,6 @@ def generate_dataset(num_examples, prefix=None):
 
 
 if __name__ == "__main__":
-    generate_dataset(100000, prefix="training")
-    # generate_dataset(3000, prefix="validation")
-    # generate_dataset(3000, prefix="test")
+    generate_dataset(100000, prefix="training", board_size=9)
+    generate_dataset(3000, prefix="validation", board_size=9)
+    generate_dataset(3000, prefix="test", board_size=9)
