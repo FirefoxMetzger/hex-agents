@@ -56,9 +56,9 @@ class MCTSAgent(Agent):
 
     def belief_matrix(self):
         quality = self.quality()
-        board_shape = self.root_node.env.board[0, ...].shape
+        board_shape = self.root_node.env.board.shape
         positions = np.unravel_index(self.root_node.available_actions,
-                                     self.root_node.env.board[0, ...].shape)
+                                     self.root_node.env.board.shape)
         win_prop = -1 * np.ones(board_shape)
         win_prop[positions[0], positions[1]] = quality
         return win_prop[2:-2, 2:-2]

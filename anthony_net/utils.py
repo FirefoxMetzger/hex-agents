@@ -12,7 +12,8 @@ def convert_state(state):
     converted_state[[1, 4], :, :2] = 1
     converted_state[[1, 5], :, -2:] = 1
 
-    converted_state[:2, 2:-2, 2:-2] = board[:2, ...]
+    converted_state[player.BLACK, 2:-2, 2:-2] = board == player.BLACK
+    converted_state[player.WHITE, 2:-2, 2:-2] = board == player.WHITE
 
     region_black = np.pad(state.regions[player.BLACK], 1)
     region_white = np.pad(state.regions[player.WHITE], 1)

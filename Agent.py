@@ -24,7 +24,7 @@ class RandomAgent(Agent):
         super(RandomAgent, self).__init__()
 
     def act(self, state, active_player, info):
-        valid_actions = self.all_actions[(state[2, ...] == 1).flatten()]
+        valid_actions = self.all_actions[(state == 2).flatten()]
         idx = int(random.random() * len(valid_actions))
         return valid_actions[idx]
 

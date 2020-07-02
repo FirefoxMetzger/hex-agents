@@ -24,7 +24,7 @@ class SearchNode(object):
                                          dtype=np.float32)
         self.Q = np.inf * np.ones(board_size ** 2,
                                   dtype=np.float32)
-        self.agent = RandomAgent()
+        self.agent = RandomAgent(board_size=board_size)
 
     def add_leaf(self):
         if self.is_terminal:
@@ -70,6 +70,9 @@ class SearchNode(object):
         return child
 
     def simulate(self):
+        if self.is_terminal:
+            return self.env.winner
+
         env = HexEnv(
             opponent_policy=self.agent.act,
             player_color=self.env.active_player,
