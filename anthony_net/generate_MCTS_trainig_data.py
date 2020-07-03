@@ -6,52 +6,17 @@ import minihex
 import tqdm
 from multiprocessing import Pool, cpu_count
 from utils import convert_state
+from utils import generate_sample as generate_board
 import random
 
 
-def generate_board(board_size=5):
-    num_white_stones = np.random.randint(board_size ** 2 // 2)
-    if random.random() > 0.5:
-        num_black_stones = num_white_stones + 1
-        active_player = player.WHITE
-    else:
-        num_black_stones = num_white_stones
-        active_player = player.BLACK
-    positions = np.random.rand(board_size, board_size)
-    board_shape = (board_size, board_size)
-    ny, nx = np.unravel_index(np.argsort(positions.flatten()), board_shape)
-    white_y = ny[:num_white_stones]
-    white_x = nx[:num_white_stones]
-    black_y = ny[num_white_stones:num_white_stones+num_black_stones]
-    black_x = nx[num_white_stones:num_white_stones+num_black_stones]
-    board = np.zeros((3, board_size, board_size))
-    board[2, ...] = 1
-    board[player.WHITE, white_y, white_x] = 1
-    board[2, white_y, white_x] = 0
-    board[player.BLACK, black_y, black_x] = 1
-    board[2, black_y, black_x] = 0
-
-    return board, active_player
-
-
 def generate_sample(idx, board_size=5):
-    # generate a random board state
     board, active_player = generate_board(board_size)
+
     sim = HexGame(active_player, board, active_player)
-    while sim.done:
-        board, active_player = generate_board(board_size)
-        sim = HexGame(active_player, board, active_player)
-
-    # instantiate expert at the generated position and query
-    # expert action
     agent = MCTSAgent(sim, depth=1000)
+    action = agent.act(board, active_player)
 
-    info = {
-        'state': board,
-        'last_move_opponent': None,
-        'last_move_player': None
-    }
-    action = agent.act(board, active_player, info)
     if active_player == player.BLACK:
         return convert_state(sim), (action, -1)
     else:
@@ -70,7 +35,7 @@ def generate_dataset(num_examples, prefix=None, board_size=5):
 
     dataset = list()
     labels = list()
-    with Pool(16) as workers:
+    with Pool(cpu_count() - 2) as workers:
         return_val = list(tqdm.tqdm(workers.imap(
                                         generate_sample,
                                         [hexgame for _ in range(num_examples)],

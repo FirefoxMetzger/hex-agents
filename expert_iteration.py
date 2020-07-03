@@ -62,7 +62,7 @@ def generate_samples(num_samples, board_size):
     active_players = list()
     for idx in range(num_samples):
         board, active_player = generate_sample(board_size)
-        board_positions.append(board)
+        board_positions.append(convert_state(board))
         active_players.append(active_player)
     return np.stack(board_positions, axis=0), np.stack(active_players, axis=0)
 

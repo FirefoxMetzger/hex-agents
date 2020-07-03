@@ -54,4 +54,7 @@ def generate_sample(board_size=9):
     board[black_y, black_x] = player.BLACK
 
     sim = HexGame(active_player, board, active_player)
-    return convert_state(sim), active_player
+    while sim.done:
+        board, active_player = generate_sample(board_size)
+
+    return board, active_player

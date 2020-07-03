@@ -24,7 +24,7 @@ class MCTSAgent(Agent):
             self.root_node = SearchNode(env)
         self.depth = depth
 
-    def act(self, state, active_player, info):
+    def act(self, state, active_player, info=None):
         self.update_root_state(state, info)
         self.plan(self.depth)
         action = self.policy()
