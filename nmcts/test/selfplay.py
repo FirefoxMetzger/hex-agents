@@ -8,8 +8,8 @@ env = gym.make("hex-v0", opponent_policy=None, board_size=5)
 state = env.reset()
 hexgame = env.simulator
 
-opponent = NMCTSAgent(env.simulator, depth=10)
-agent = NMCTSAgent(env.simulator, depth=10)
+opponent = NMCTSAgent(env.simulator, depth=100)
+agent = NMCTSAgent(env.simulator, depth=100)
 env = gym.make("hex-v0", opponent_policy=opponent.act, board_size=5)
 state = env.reset()
 info = {
