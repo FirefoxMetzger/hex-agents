@@ -8,8 +8,7 @@ from multiprocessing import Pool, cpu_count
 from utils import convert_state
 
 
-def generate_sample(idx, board_size=5):
-    # generate a random board state
+def generate_board(board_size=5):
     num_white_stones = np.random.randint(board_size ** 2 // 2)
     if np.random.rand() > 0.5:
         num_black_stones = num_white_stones + 1
@@ -31,9 +30,19 @@ def generate_sample(idx, board_size=5):
     board[player.BLACK, black_y, black_x] = 1
     board[2, black_y, black_x] = 0
 
+    return board, active_player
+
+
+def generate_sample(idx, board_size=5):
+    # generate a random board state
+    board, active_player = generate_board(board_size)
+    sim = HexGame(active_player, board, active_player)
+    while sim.done:
+        board, active_player = generate_board(board_size)
+        sim = HexGame(active_player, board, active_player)
+
     # instantiate expert at the generated position and query
     # expert action
-    sim = HexGame(active_player, board, active_player)
     agent = MCTSAgent(sim, depth=1000)
 
     info = {
@@ -60,11 +69,11 @@ def generate_dataset(num_examples, prefix=None, board_size=5):
 
     dataset = list()
     labels = list()
-    with Pool(cpu_count() - 2) as workers:
+    with Pool(16) as workers:
         return_val = list(tqdm.tqdm(workers.imap(
                                         generate_sample,
                                         [hexgame for _ in range(num_examples)],
-                                        chunksize=3),
+                                        chunksize=1),
                                     total=num_examples))
     for example, label in return_val:
         dataset.append(example)
@@ -77,6 +86,6 @@ def generate_dataset(num_examples, prefix=None, board_size=5):
 
 
 if __name__ == "__main__":
-    generate_dataset(100000, prefix="training", board_size=9)
-    generate_dataset(3000, prefix="validation", board_size=9)
-    generate_dataset(3000, prefix="test", board_size=9)
+    generate_dataset(500000, prefix="training", board_size=9)
+    generate_dataset(10000, prefix="validation", board_size=9)
+    generate_dataset(10000, prefix="test", board_size=9)
