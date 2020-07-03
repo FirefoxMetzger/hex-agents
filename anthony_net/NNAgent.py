@@ -1,20 +1,24 @@
 from Agent import Agent
 import tensorflow as tf
 from minihex import player, HexGame
-from network import HexagonalInitializer, HexagonalConstraint, selective_loss
+from anthony_net.network import HexagonalInitializer, HexagonalConstraint
+from anthony_net.network import selective_loss
 import gym
 import numpy as np
-from utils import convert_state
+from anthony_net.utils import convert_state
 
 
 class NNAgent(Agent):
-    def __init__(self, model_file):
-        with tf.keras.utils.custom_object_scope({
-                    "HexagonalInitializer": HexagonalInitializer,
-                    "HexagonalConstraint": HexagonalConstraint,
-                    "selective_loss": selective_loss
-                }):
-            self.model = tf.keras.models.load_model(model_file)
+    def __init__(self, model):
+        if isinstance(model, str):
+            with tf.keras.utils.custom_object_scope({
+                "HexagonalInitializer": HexagonalInitializer,
+                "HexagonalConstraint": HexagonalConstraint,
+                "selective_loss": selective_loss
+            }):
+                self.model = tf.keras.models.load_model(model)
+        else:
+            self.model = model
 
     def act(self, state, active_player, info):
         game = HexGame(active_player, state, active_player)
@@ -37,6 +41,15 @@ class NNAgent(Agent):
         actions[player.BLACK, active_player_batch == player.WHITE] = -1
         actions = actions.T
         return actions
+
+    def predict_env(self, env):
+        state = convert_state(env)
+        active_player = env.active_player
+        action_black, action_white = self.model.predict(state[np.newaxis, ...])
+        if active_player == player.BLACK:
+            return action_black.squeeze()
+        else:
+            return action_white.squeeze()
 
 
 if __name__ == "__main__":

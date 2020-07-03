@@ -1,5 +1,6 @@
 import numpy as np
 from minihex import HexGame, player
+import random
 
 
 def convert_state(state):
@@ -12,7 +13,8 @@ def convert_state(state):
     converted_state[[1, 4], :, :2] = 1
     converted_state[[1, 5], :, -2:] = 1
 
-    converted_state[:2, 2:-2, 2:-2] = board[:2, ...]
+    converted_state[player.BLACK, 2:-2, 2:-2] = board == player.BLACK
+    converted_state[player.WHITE, 2:-2, 2:-2] = board == player.WHITE
 
     region_black = np.pad(state.regions[player.BLACK], 1)
     region_white = np.pad(state.regions[player.WHITE], 1)
@@ -30,3 +32,26 @@ def convert_state(state):
     converted_state[5][positions] = 1
 
     return np.moveaxis(converted_state, 0, -1)
+
+
+def generate_sample(board_size=9):
+    num_white_stones = np.random.randint(board_size ** 2 // 2)
+    if random.random() > 0.5:
+        num_black_stones = num_white_stones + 1
+        active_player = player.WHITE
+    else:
+        num_black_stones = num_white_stones
+        active_player = player.BLACK
+    positions = np.random.rand(board_size, board_size)
+    board_shape = (board_size, board_size)
+    ny, nx = np.unravel_index(np.argsort(positions.flatten()), board_shape)
+    white_y = ny[:num_white_stones]
+    white_x = nx[:num_white_stones]
+    black_y = ny[num_white_stones:num_white_stones+num_black_stones]
+    black_x = nx[num_white_stones:num_white_stones+num_black_stones]
+    board = np.zeros((board_size, board_size))
+    board[white_y, white_x] = player.WHITE
+    board[black_y, black_x] = player.BLACK
+
+    sim = HexGame(active_player, board, active_player)
+    return convert_state(sim), active_player

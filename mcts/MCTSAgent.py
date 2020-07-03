@@ -1,15 +1,27 @@
 from mcts.SearchNode import SearchNode
-from copy import deepcopy
 import numpy as np
 from minihex.HexGame import HexGame
 from minihex import player
 from Agent import Agent
+import random
 
 
 class MCTSAgent(Agent):
-    def __init__(self, env, depth=1000):
+    def __init__(self,
+                 env=None,
+                 depth=1000,
+                 board_size=9,
+                 active_player=player.BLACK, player=player.BLACK):
         super(MCTSAgent, self).__init__()
-        self.root_node = SearchNode(env)
+        if env is None:
+            board = player.EMPTY * np.ones((board_size, board_size))
+            self.root_node = SearchNode(HexGame(
+                active_player,
+                board,
+                player
+            ))
+        else:
+            self.root_node = SearchNode(env)
         self.depth = depth
 
     def act(self, state, active_player, info):
@@ -30,7 +42,7 @@ class MCTSAgent(Agent):
         max_value = np.max(qualities)
         action_fn = self.root_node.available_actions
         valid_actions = action_fn[qualities == max_value]
-        idx = np.random.randint(len(valid_actions))
+        idx = int(random.random() * len(valid_actions))
         return valid_actions[idx]
 
     def quality(self, is_greedy=True):
@@ -41,6 +53,9 @@ class MCTSAgent(Agent):
         return np.array(qualities)
 
     def update_root_state(self, state, info):
+        if info is None:
+            return
+
         last_move = info["last_move_player"]
         last_opponent_move = info["last_move_opponent"]
 
@@ -56,9 +71,9 @@ class MCTSAgent(Agent):
 
     def belief_matrix(self):
         quality = self.quality()
-        board_shape = self.root_node.env.board[0, ...].shape
+        board_shape = self.root_node.env.board.shape
         positions = np.unravel_index(self.root_node.available_actions,
-                                     self.root_node.env.board[0, ...].shape)
+                                     self.root_node.env.board.shape)
         win_prop = -1 * np.ones(board_shape)
         win_prop[positions[0], positions[1]] = quality
         return win_prop[2:-2, 2:-2]

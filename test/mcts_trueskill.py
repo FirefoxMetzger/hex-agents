@@ -9,7 +9,7 @@ from Agent import Agent, RandomAgent
 
 
 def play_match(agent1, agent2, sim=None):
-    env = gym.make("hex-v0", opponent_policy=agent2.act, board_size=9)
+    env = gym.make("hex-v0", opponent_policy=agent2.act, board_size=5)
     state, info = env.reset()
     agent1.reset(sim)
     agent2.reset(sim)
@@ -51,13 +51,13 @@ trueskill.setup(mu=1200,
                 tau=2.0,
                 draw_probability=0.01,
                 backend="scipy")
-env = gym.make("hex-v0", opponent_policy=None, board_size=9)
+env = gym.make("hex-v0", opponent_policy=None, board_size=5)
 env.reset()
 sim = env.simulator
-agent_pool = [MCTSAgent(sim, depth=d) for d in [10, 50, 100, 500, 1000, 1500]]
-agent_pool += [RandomAgent()]
+agent_pool = [MCTSAgent(sim, depth=d) for d in [10, 50, 100, 250, 500, 750, 1000, 1250, 1500]]
+agent_pool += [RandomAgent(board_size=5)]
 
-for game_idx in range(1000):
+for game_idx in range(5000):
     # pick the agent we are most uncertain about
     sigmas = [agent.rating.sigma for agent in agent_pool]
     player1_idx = np.argmax(sigmas)
