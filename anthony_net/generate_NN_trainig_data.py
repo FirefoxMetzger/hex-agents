@@ -7,35 +7,7 @@ import tqdm
 from anthony_net.utils import convert_state
 from anthony_net.NNAgent import NNAgent
 import random
-
-
-def generate_sample(board_size=5):
-    # generate a random board state
-    num_white_stones = np.random.randint(board_size ** 2 // 2)
-    if random.random() > 0.5:
-        num_black_stones = num_white_stones + 1
-        active_player = player.WHITE
-    else:
-        num_black_stones = num_white_stones
-        active_player = player.BLACK
-    positions = np.random.rand(board_size, board_size)
-    board_shape = (board_size, board_size)
-    ny, nx = np.unravel_index(np.argsort(positions.flatten()), board_shape)
-    white_y = ny[:num_white_stones]
-    white_x = nx[:num_white_stones]
-    black_y = ny[num_white_stones:num_white_stones+num_black_stones]
-    black_x = nx[num_white_stones:num_white_stones+num_black_stones]
-    board = np.zeros((3, board_size, board_size))
-    board[2, ...] = 1
-    board[player.WHITE, white_y, white_x] = 1
-    board[2, white_y, white_x] = 0
-    board[player.BLACK, black_y, black_x] = 1
-    board[2, black_y, black_x] = 0
-
-    # instantiate expert at the generated position and query
-    # expert action
-    sim = HexGame(active_player, board, active_player)
-    return convert_state(sim), active_player
+from utils import generate_sample
 
 
 def generate_dataset(num_examples, prefix=None, batch_size=32):

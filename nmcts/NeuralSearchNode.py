@@ -8,18 +8,19 @@ WEIGHT_a = 100
 
 
 class NeuralSearchNode(SearchNode):
-    def __init__(self, env, agent=None):
+    def __init__(self, env, agent=None, model_file=None, network_plicy=None):
         super(NeuralSearchNode, self).__init__(env)
         if agent is None:
-            self.agent = NNAgent("best_model.h5")
+            self.network_agent = NNAgent(model_file)
         else:
-            self.agent = agent
-        self.network_policy = self.agent.predict_env(self.env)
+            self.network_agent = agent
+
+        self.network_policy = self.network_agent.predict_env(self.env)
 
     def expand(self, action):
         new_env = deepcopy(self.env)
         new_env.make_move(action)
-        child = NeuralSearchNode(new_env, agent=self.agent)
+        child = NeuralSearchNode(new_env, agent=self.network_agent)
         self.children[action] = child
 
         return child
@@ -32,3 +33,21 @@ class NeuralSearchNode(SearchNode):
         predicted_q = self.network_policy[action]
         self.Q[action] += (WEIGHT_a * predicted_q / (child_sims + 1))
         self.greedy_Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
+
+    def add_leaf_batched(self):
+        if self.is_terminal:
+            winner = self.env.winner
+            self.backup(winner)
+            return winner
+
+        action = self.select()
+
+        if action in self.children:
+            winner = self.children[action].add_leaf()
+        else:
+            child = self.expand(action)
+            winner = child.simulate()
+            child.backup(winner)
+
+        self.backup(winner, action)
+        return winner

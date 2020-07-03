@@ -7,9 +7,21 @@ import random
 
 
 class MCTSAgent(Agent):
-    def __init__(self, env, depth=1000):
+    def __init__(self,
+                 env=None,
+                 depth=1000,
+                 board_size=9,
+                 active_player=player.BLACK, player=player.BLACK):
         super(MCTSAgent, self).__init__()
-        self.root_node = SearchNode(env)
+        if env is None:
+            board = player.EMPTY * np.ones((board_size, board_size))
+            self.root_node = SearchNode(HexGame(
+                active_player,
+                board,
+                player
+            ))
+        else:
+            self.root_node = SearchNode(env)
         self.depth = depth
 
     def act(self, state, active_player, info):
@@ -41,6 +53,9 @@ class MCTSAgent(Agent):
         return np.array(qualities)
 
     def update_root_state(self, state, info):
+        if info is None:
+            return
+
         last_move = info["last_move_player"]
         last_opponent_move = info["last_move_opponent"]
 

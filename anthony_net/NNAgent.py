@@ -9,13 +9,16 @@ from anthony_net.utils import convert_state
 
 
 class NNAgent(Agent):
-    def __init__(self, model_file):
-        with tf.keras.utils.custom_object_scope({
-            "HexagonalInitializer": HexagonalInitializer,
-            "HexagonalConstraint": HexagonalConstraint,
-            "selective_loss": selective_loss
-        }):
-            self.model = tf.keras.models.load_model(model_file)
+    def __init__(self, model):
+        if isinstance(model, str):
+            with tf.keras.utils.custom_object_scope({
+                "HexagonalInitializer": HexagonalInitializer,
+                "HexagonalConstraint": HexagonalConstraint,
+                "selective_loss": selective_loss
+            }):
+                self.model = tf.keras.models.load_model(model)
+        else:
+            self.model = model
 
     def act(self, state, active_player, info):
         game = HexGame(active_player, state, active_player)
