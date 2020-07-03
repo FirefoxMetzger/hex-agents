@@ -49,7 +49,7 @@ def generate_sample(board_size=9):
     white_x = nx[:num_white_stones]
     black_y = ny[num_white_stones:num_white_stones+num_black_stones]
     black_x = nx[num_white_stones:num_white_stones+num_black_stones]
-    board = np.zeros((board_size, board_size))
+    board = player.EMPTY * np.ones((board_size, board_size))
     board[white_y, white_x] = player.WHITE
     board[black_y, black_x] = player.BLACK
 

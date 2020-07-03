@@ -10,7 +10,7 @@ from utils import generate_sample as generate_board
 import random
 
 
-def generate_sample(idx, board_size=5):
+def generate_sample(board_size=5):
     board, active_player = generate_board(board_size)
 
     sim = HexGame(active_player, board, active_player)
@@ -29,16 +29,12 @@ def generate_dataset(num_examples, prefix=None, board_size=5):
     else:
         prefix += "_"
 
-    env = gym.make("hex-v0", opponent_policy=None, board_size=board_size)
-    env.reset()
-    hexgame = env.simulator
-
     dataset = list()
     labels = list()
     with Pool(cpu_count() - 2) as workers:
         return_val = list(tqdm.tqdm(workers.imap(
                                         generate_sample,
-                                        [hexgame for _ in range(num_examples)],
+                                        [board_size for idx in range(num_examples)],
                                         chunksize=1),
                                     total=num_examples))
     for example, label in return_val:
