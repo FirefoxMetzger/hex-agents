@@ -32,6 +32,11 @@ def selective_loss(y_true, y_pred):
     return factor * tf.keras.losses.KLD(y_true, y_pred)
 
 
+def selective_CategoricalAccuracy(y_true, y_pred):
+    factor = tf.reduce_sum(y_true, axis=-1, keepdims=True)
+    return tf.keras.metrics.categorical_accuracy(y_true, factor * y_pred)
+
+
 def gen_model(board_size, policy_head=True, value_head=False):
     feature_decomposition = tf.keras.Sequential()
     feature_decomposition.add(tf.keras.layers.Input(shape=(board_size+4,

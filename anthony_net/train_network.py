@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from network import gen_model, selective_loss
+from network import gen_model, selective_loss, selective_CategoricalAccuracy
 
 
 def load_data(prefix=None):
@@ -28,7 +28,7 @@ network = gen_model(5)
 network.compile(
     optimizer=tf.keras.optimizers.Adam(),
     loss=[selective_loss, selective_loss],
-    metrics=["CategoricalAccuracy"]
+    metrics=[[selective_CategoricalAccuracy], [selective_CategoricalAccuracy]]
 )
 network.fit(training_data, training_labels,
             epochs=100,
