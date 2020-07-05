@@ -26,16 +26,13 @@ class MCTSAgent(Agent):
 
     def act(self, state, active_player, info):
         self.update_root_state(state, info)
-        self.plan(self.depth)
+        for _ in range(self.depth):
+            self.root_node.add_leaf()
         action = self.policy()
         return action
 
     def reset(self, env):
         self.root_node = SearchNode(env)
-
-    def plan(self, num_simulations=100):
-        for _ in range(num_simulations):
-            self.root_node.add_leaf()
 
     def policy(self):
         qualities = self.quality()
