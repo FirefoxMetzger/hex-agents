@@ -2,20 +2,24 @@ from mcts.SearchNode import SearchNode
 from copy import deepcopy
 from anthony_net.utils import convert_state
 from anthony_net.NNAgent import NNAgent
+from minihex.HexGame import HexEnv
 import random
 
 WEIGHT_a = 100
 
 
 class NeuralSearchNode(SearchNode):
-    def __init__(self, env, agent=None, model_file=None, network_plicy=None):
+    def __init__(self, env, agent=None, model_file=None, network_policy=None):
         super(NeuralSearchNode, self).__init__(env)
         if agent is None:
             self.network_agent = NNAgent(model_file)
         else:
             self.network_agent = agent
 
-        self.network_policy = self.network_agent.predict_env(self.env)
+        if network_policy is None:
+            self.network_policy = self.network_agent.predict_env(self.env)
+        else:
+            self.network_policy = network_policy
 
     def expand(self, action):
         new_env = deepcopy(self.env)
@@ -34,7 +38,7 @@ class NeuralSearchNode(SearchNode):
         self.Q[action] += (WEIGHT_a * predicted_q / (child_sims + 1))
         self.greedy_Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
 
-    def add_leaf_batched(self):
+    def add_leaf_deferred(self):
         if self.is_terminal:
             winner = self.env.winner
             self.backup(winner)
@@ -43,11 +47,28 @@ class NeuralSearchNode(SearchNode):
         action = self.select()
 
         if action in self.children:
-            winner = self.children[action].add_leaf()
+            winner = yield from self.children[action].add_leaf_deferred()
         else:
-            child = self.expand(action)
-            winner = child.simulate()
+            child = yield from self.batched_expand(action)
+            winner = yield from child.batched_simulate()
             child.backup(winner)
 
         self.backup(winner, action)
+        return winner
+
+    def batched_expand(self, action):
+        new_env = deepcopy(self.env)
+        new_env.make_move(action)
+
+        # deferred NeuralSearchNode creation
+        child = yield ("expand", new_env)
+        self.children[action] = child
+
+        return child
+
+    def batched_simulate(self):
+        if self.is_terminal:
+            return self.env.winner
+
+        winner = yield ("simulate", self.env)
         return winner
