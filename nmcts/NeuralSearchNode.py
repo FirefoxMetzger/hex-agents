@@ -70,5 +70,6 @@ class NeuralSearchNode(SearchNode):
         if self.is_terminal:
             return self.env.winner
 
+        # deferred simulation for parallel processing
         winner = yield ("simulate", self.env)
         return winner
