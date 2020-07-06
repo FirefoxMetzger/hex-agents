@@ -24,7 +24,8 @@ training_data, training_labels = load_data("training")
 validation_data, validation_labels = load_data("validation")
 test_data, test_labels = load_data("test")
 
-network = gen_model(5)
+board_size = training_data.shape[1] - 4
+network = gen_model(board_size)
 network.compile(
     optimizer=tf.keras.optimizers.Adam(),
     loss=[selective_loss, selective_loss],
