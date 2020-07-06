@@ -2,7 +2,7 @@ from Agent import Agent
 import tensorflow as tf
 from minihex import player, HexGame
 from anthony_net.network import HexagonalInitializer, HexagonalConstraint
-from anthony_net.network import selective_loss
+from anthony_net.network import selective_loss, selective_CategoricalAccuracy
 import gym
 import numpy as np
 from anthony_net.utils import convert_state
@@ -14,7 +14,8 @@ class NNAgent(Agent):
             with tf.keras.utils.custom_object_scope({
                 "HexagonalInitializer": HexagonalInitializer,
                 "HexagonalConstraint": HexagonalConstraint,
-                "selective_loss": selective_loss
+                "selective_loss": selective_loss,
+                "selective_CategoricalAccuracy": selective_CategoricalAccuracy
             }):
                 self.model = tf.keras.models.load_model(model)
         else:
@@ -50,6 +51,15 @@ class NNAgent(Agent):
             return action_black.squeeze()
         else:
             return action_white.squeeze()
+
+    def get_scores(self, state_batch, active_player_batch):
+        policy_values = np.stack(self.model.predict(state_batch), axis=-1)
+        policy = np.zeros(policy_values.shape[:2])
+        black_moves = active_player_batch == player.BLACK
+        white_moves = active_player_batch == player.WHITE
+        policy[black_moves, :] = policy_values[black_moves, :, player.BLACK]
+        policy[white_moves, :] = policy_values[white_moves, :, player.WHITE]
+        return policy
 
 
 if __name__ == "__main__":

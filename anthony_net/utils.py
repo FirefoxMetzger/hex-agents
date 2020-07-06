@@ -3,8 +3,8 @@ from minihex import HexGame, player
 import random
 
 
-def convert_state(state):
-    board = state.board
+def convert_state(sim):
+    board = sim.board
     board_size = board.shape[1]
     converted_state = np.zeros((6, board_size+4, board_size+4))
 
@@ -16,8 +16,8 @@ def convert_state(state):
     converted_state[player.BLACK, 2:-2, 2:-2] = board == player.BLACK
     converted_state[player.WHITE, 2:-2, 2:-2] = board == player.WHITE
 
-    region_black = np.pad(state.regions[player.BLACK], 1)
-    region_white = np.pad(state.regions[player.WHITE], 1)
+    region_black = np.pad(sim.regions[player.BLACK], 1)
+    region_white = np.pad(sim.regions[player.WHITE], 1)
 
     positions = np.where(region_black == region_black[1, 1])
     converted_state[2][positions] = 1
