@@ -102,7 +102,8 @@ def compute_labels(board_positions, active_players, expert, workers):
     pbar = tqdm.tqdm(desc="Generating Labels",
                      total=batch_size, position=1, leave=False)
 
-    initial_sims = workers.starmap(HexGame, zip(active_players, board_positions, active_players))
+    initial_sims = workers.starmap(HexGame, zip(
+        active_players, board_positions, active_players))
     converted_boards = np.stack([convert_state(sim) for sim in initial_sims])
     policies = nn_agent.get_scores(converted_boards, active_players)
 
