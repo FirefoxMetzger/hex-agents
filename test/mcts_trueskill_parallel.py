@@ -37,7 +37,7 @@ env = gym.make("hex-v0", opponent_policy=None, board_size=board_size)
 env.reset()
 sim = env.simulator
 agent_pool = [MCTSAgent(sim, depth=d) for d in [50, 100, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000]]
-agent_pool += [RandomAgent()]
+agent_pool += [RandomAgent(board_size)]
 
 num_games = 5000
 agent1, agent2 = np.random.choice(agent_pool, size=(2, num_games * 2))
@@ -47,7 +47,7 @@ agent2 = (agent2[keepers])[:num_games]
 startup_environments = [sim] * num_games
 board_sizes = [board_size] * num_games
 
-with Pool(cpu_count() - 4) as workers:
+with Pool(cpu_count() - 2) as workers:
     results = list(tqdm.tqdm(workers.imap(play_match, zip(agent1, agent2, startup_environments, board_sizes), chunksize=1),
                             total=num_games))
 for agentA, agentB, reward in zip(agent1, agent2, results):
