@@ -1,9 +1,10 @@
 import numpy as np
 import tensorflow as tf
-from network import gen_model, selective_loss, selective_CategoricalAccuracy
+from network import gen_model
+from network import selective_loss, selective_CategoricalAccuracy
 
 
-def load_data(prefix=None):
+def load_data(prefix=None, max_size=None):
     if prefix is None:
         prefix = ""
     else:
@@ -17,7 +18,10 @@ def load_data(prefix=None):
     board_size = data.shape[2] - 4
     labels = tf.one_hot(labels, board_size ** 2)
 
-    return data, (labels[:, 0, :], labels[:, 1, :])
+    if max_size is None:
+        return data, (labels[:, 0, :], labels[:, 1, :])
+    else:
+        return data[:max_size, ...], (labels[:max_size, 0, :], labels[:max_size, 1, :])
 
 
 training_data, training_labels = load_data("training")
