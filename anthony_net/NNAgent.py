@@ -53,7 +53,7 @@ class NNAgent(Agent):
             return action_white.squeeze()
 
     def get_scores(self, state_batch, active_player_batch):
-        policy_values = np.stack(self.model.predict(state_batch), axis=-1)
+        policy_values = np.stack(self.model.predict(state_batch, batch_size=512), axis=-1)
         policy = np.zeros(policy_values.shape[:2])
         black_moves = active_player_batch == player.BLACK
         white_moves = active_player_batch == player.WHITE
