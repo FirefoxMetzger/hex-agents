@@ -9,6 +9,7 @@ from anthony_net.utils import convert_state, generate_sample
 import numpy as np
 from minihex import player, HexGame
 import tqdm
+from tqdm.keras import TqdmCallback
 from anthony_net.network import gen_model, selective_loss
 import itertools
 from nmcts.NeuralSearchNode import NeuralSearchNode
@@ -68,8 +69,8 @@ def build_apprentice(train_dataset, val_dataset, board_size, iteration):
             tf.keras.callbacks.ModelCheckpoint(
                 f'best_model_iteration_{iteration}.h5',
                 monitor='val_loss',
-                save_only_best=True)
-
+                save_only_best=True),
+            TqdmCallback(data_size=len(training_data), batch_size=256)
         ],
         verbose=0)
     return NNAgent(network)
@@ -82,7 +83,9 @@ def generate_samples(num_samples, board_size):
     # (0 correlation with other states in the dataset)
     board_positions = list()
     active_players = list()
-    for idx in range(num_samples):
+    pbar = tqdm.tqdm(range(num_samples),
+                     desc="Generating Samples", position=1, leave=False)
+    for idx in pbar:
         sim, active_player = generate_sample(board_size)
         board_positions.append(sim.board)
         active_players.append(active_player)
@@ -96,9 +99,10 @@ def compute_labels(board_positions, active_players, expert, workers):
     batch_size = active_players.shape[0]
     nn_agent = expert.agent
     depth = expert.depth
+    pbar = tqdm.tqdm(desc="Generating Labels",
+                     total=batch_size, position=1, leave=False)
 
-    initial_sims = [HexGame(active_player, board, active_player)
-                    for board, active_player in zip(board_positions, active_players)]
+    initial_sims = workers.starmap(HexGame, zip(active_players, board_positions, active_players))
     converted_boards = np.stack([convert_state(sim) for sim in initial_sims])
     policies = nn_agent.get_scores(converted_boards, active_players)
 
@@ -137,6 +141,7 @@ def compute_labels(board_positions, active_players, expert, workers):
                     labels.append((-1, action))
                 else:
                     labels.append((action, -1))
+                pbar.update(1)
 
         # handle expansions
         if node_creation_batch:
@@ -164,7 +169,9 @@ def compute_labels(board_positions, active_players, expert, workers):
         # handle simulation
         if simulation_batch:
             sims = [task[3] for task in simulation_batch]
-            winners = [winner for winner in workers.map(simulate, sims)]
+            board_sizes = [sim.board_size for sim in sims]
+            winners = [winner for winner in workers.starmap(
+                simulate, zip(sims, board_sizes))]
             for task, winner in zip(simulation_batch, winners):
                 idx, job, gen, _ = task
                 try:
@@ -177,16 +184,16 @@ def compute_labels(board_positions, active_players, expert, workers):
 
 
 if __name__ == "__main__":
-    board_size = 5
+    board_size = 9
     search_depth = 1000
-    dataset_size = 512
-    validation_size = 32
+    dataset_size = 100000
+    validation_size = 5000
     iterations = 3
 
     expert = NMCTSAgent(board_size=board_size,
                         depth=search_depth, model_file="best_model.h5")
     with Pool(cpu_count() - 2) as workers:
-        for idx in tqdm.tqdm(range(iterations)):
+        for idx in tqdm.tqdm(range(iterations), desc="Training Experts", position=0):
             # apprenticeship learning
             # -----
             training_data, active_players = generate_samples(
