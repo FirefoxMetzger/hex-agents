@@ -1,6 +1,49 @@
 import numpy as np
 from minihex import HexGame, player
 import random
+from enum import IntEnum
+
+
+class Direction(IntEnum):
+    NORTH = 2
+    EAST = 5
+    SOUTH = 3
+    WEST = 4
+
+
+def convert_state_batch(sim_batch):
+    board_size = sim_batch[0].board_size
+    batch_size = len(sim_batch)
+    board_batch = np.stack([sim.board for sim in sim_batch])
+    black_regions = np.stack([sim.regions[player.BLACK] for sim in sim_batch])
+    white_regions = np.stack([sim.regions[player.WHITE] for sim in sim_batch])
+    regions = np.stack([sim.regions for sim in sim_batch])
+
+    # order: batch, player, [north/west, south/east]
+    border_regions = regions[:, :, [0, -1], [0, -1]]
+    border_regions = border_regions.reshape((batch_size, 2, 1, 1, 2))
+    border_stones = regions[..., np.newaxis] == border_regions
+
+    converted_state = np.ones((batch_size, board_size+4, board_size+4, 6))
+    converted_state[:, 2:-2, :, player.BLACK] = 0
+    converted_state[:, :, 2:-2, player.WHITE] = 0
+    converted_state[:, 2:, :, Direction.NORTH] = 0
+    converted_state[:, :-2, :, Direction.SOUTH] = 0
+    converted_state[:, :, 2:, Direction.WEST] = 0
+    converted_state[:, :, :-2, Direction.EAST] = 0
+
+    converted_state[:, 2:-2, 2:-2, player.BLACK] = board_batch == player.BLACK
+    converted_state[:, 2:-2, 2:-2, player.WHITE] = board_batch == player.WHITE
+    converted_state[:, 1:-1, 1:-1,
+                    Direction.NORTH] = border_stones[:, player.BLACK, :, :, 0]
+    converted_state[:, 1:-1, 1:-1,
+                    Direction.SOUTH] = border_stones[:, player.BLACK, :, :, 1]
+    converted_state[:, 1:-1, 1:-1,
+                    Direction.WEST] = border_stones[:, player.WHITE, :, :, 0]
+    converted_state[:, 1:-1, 1:-1,
+                    Direction.EAST] = border_stones[:, player.WHITE, :, :, 1]
+
+    return converted_state
 
 
 def convert_state(sim):

@@ -5,7 +5,7 @@ from anthony_net.NNAgent import NNAgent
 from nmcts.NMCTSAgent import NMCTSAgent
 from Agent import RandomAgent
 from mcts.MCTSAgent import MCTSAgent
-from anthony_net.utils import convert_state, generate_sample
+from anthony_net.utils import convert_state, generate_sample, convert_state_batch
 import numpy as np
 from minihex import player, HexGame
 import tqdm
@@ -32,12 +32,12 @@ def build_apprentice(train_dataset, val_dataset, board_size, iteration):
     training_data, training_labels = train_dataset
     validation_data, validation_labels = val_dataset
 
-    training_data = np.stack([convert_state(
-        HexGame(player.BLACK, example, player.BLACK))
-        for example in training_data])
-    validation_data = np.stack([convert_state(
-        HexGame(player.BLACK, example, player.BLACK))
-        for example in validation_data])
+    training_data = np.stack(convert_state_batch([
+        HexGame(player.BLACK, example, player.BLACK)
+        for example in training_data]))
+    validation_data = np.stack(convert_state_batch([
+        HexGame(player.BLACK, example, player.BLACK)
+        for example in validation_data]))
 
     for idx, example in enumerate(training_data):
         training_data
@@ -104,7 +104,7 @@ def compute_labels(board_positions, active_players, expert, workers):
 
     initial_sims = workers.starmap(HexGame, zip(
         active_players, board_positions, active_players))
-    converted_boards = np.stack([convert_state(sim) for sim in initial_sims])
+    converted_boards = convert_state_batch(initial_sims)
     policies = nn_agent.get_scores(converted_boards, active_players)
 
     agents = list()
@@ -146,12 +146,13 @@ def compute_labels(board_positions, active_players, expert, workers):
 
         # handle expansions
         if node_creation_batch:
-            board_batch = list()
+            sim_batch = list()
             player_batch = list()
             for task in node_creation_batch:
                 _, _, _, sim = task
-                board_batch.append(convert_state(sim))
+                sim_batch.append(sim)
                 player_batch.append(sim.active_player)
+            board_batch = convert_state_batch(sim_batch)
             board_batch = np.stack(board_batch)
             player_batch = np.stack(player_batch)
 
@@ -185,11 +186,11 @@ def compute_labels(board_positions, active_players, expert, workers):
 
 
 if __name__ == "__main__":
-    board_size = 9
-    search_depth = 1000
-    dataset_size = 100000
-    validation_size = 5000
-    iterations = 3
+    board_size = 5
+    search_depth = 10
+    dataset_size = 10000
+    validation_size = 1
+    iterations = 2
 
     expert = NMCTSAgent(board_size=board_size,
                         depth=search_depth, model_file="best_model.h5")
