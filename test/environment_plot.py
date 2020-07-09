@@ -31,8 +31,8 @@ def get_mcts_scores(file_name):
 
 fig, ax = plt.subplots()
 
-x, y, ci = get_mcts_scores("mcts_eval(5x5).json")
-x2, y2, ci2 = get_mcts_scores("mcts_eval(9x9).json")
+x, y, ci = get_mcts_scores("mcts_eval(5x5)big.json")
+x2, y2, ci2 = get_mcts_scores("mcts_eval(9x9)big.json")
 x3, y3, ci3 = get_mcts_scores("mcts_eval(11x11)big.json")
 
 ax.plot(x, y, marker='.')
