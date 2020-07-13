@@ -123,16 +123,10 @@ def compute_labels(board_positions, active_players, expert, workers):
         tasks.append((idx, "init", gen, None))
 
     while tasks:
-        node_creation_batch = list()
-        simulation_batch = list()
         expand_and_sim_batch = list()
         for task in task_iter(tasks):
             job = task[1]
-            if job == "expand":
-                node_creation_batch.append(task)
-            elif job == "simulate":
-                simulation_batch.append(task)
-            elif job == "init":
+            if job == "init":
                 idx, job, gen, args = task
                 job, args = gen.send(None)
                 tasks.append((idx, job, gen, args))
@@ -171,47 +165,9 @@ def compute_labels(board_positions, active_players, expert, workers):
             result_iter = zip(expand_and_sim_batch, policies, winners, envs)
             for task, policy, winner, env in result_iter:
                 idx, _, gen, action_history = task
-                node = NeuralSearchNode(
-                    env, agent=nn_agent, network_policy=policy)
+                node = NeuralSearchNode(env, network_policy=policy)
                 try:
                     job, args = gen.send((node, winner))
-                    tasks.append((idx, job, gen, args))
-                except StopIteration:
-                    tasks.append((idx, "done", gen, None))
-
-        # handle expansions
-        if node_creation_batch:
-            sim_batch = list()
-            player_batch = list()
-            for task in node_creation_batch:
-                _, _, _, sim = task
-                sim_batch.append(sim)
-                player_batch.append(sim.active_player)
-            board_batch = convert_state_batch(sim_batch)
-            board_batch = np.stack(board_batch)
-            player_batch = np.stack(player_batch)
-
-            policies = nn_agent.get_scores(board_batch, player_batch)
-
-            for task, policy in zip(node_creation_batch, policies):
-                idx, job, gen, sim = task
-                node = NeuralSearchNode(sim, agent=nn_agent,
-                                        network_policy=policy)
-                try:
-                    job, args = gen.send(node)
-                    tasks.append((idx, job, gen, args))
-                except StopIteration:
-                    tasks.append((idx, "done", gen, None))
-
-        # handle simulation
-        if simulation_batch:
-            sims = [task[3] for task in simulation_batch]
-            winners = [winner for winner in workers.map(
-                simulate, sims)]
-            for task, winner in zip(simulation_batch, winners):
-                idx, job, gen, _ = task
-                try:
-                    job, args = gen.send(winner)
                     tasks.append((idx, job, gen, args))
                 except StopIteration:
                     tasks.append((idx, "done", gen, None))
@@ -221,10 +177,10 @@ def compute_labels(board_positions, active_players, expert, workers):
 
 if __name__ == "__main__":
     board_size = 9
-    search_depth = 1000
-    dataset_size = 100
-    validation_size = 10
-    iterations = 1
+    search_depth = 100
+    dataset_size = 100000
+    validation_size = 5000
+    iterations = 7
 
     expert = NMCTSAgent(board_size=board_size,
                         depth=search_depth, model_file="best_model.h5")
