@@ -122,14 +122,19 @@ def compute_labels(board_positions, active_players, expert, workers):
         gen = agent.deferred_plan()
         tasks.append((idx, "init", gen, None))
 
-    while tasks:
+    active_queue_size = int(512 * 3)
+    active_tasks = deque()
+    for idx in range(min(active_queue_size, len(tasks))):
+        active_tasks.append(tasks.popleft())
+
+    while active_tasks:
         expand_and_sim_batch = list()
-        for task in task_iter(tasks):
+        for task in task_iter(active_tasks):
             job = task[1]
             if job == "init":
                 idx, job, gen, args = task
                 job, args = gen.send(None)
-                tasks.append((idx, job, gen, args))
+                active_tasks.append((idx, job, gen, args))
             elif job == "expand_and_simulate":
                 expand_and_sim_batch.append(task)
             elif job == "done":
@@ -140,6 +145,12 @@ def compute_labels(board_positions, active_players, expert, workers):
                 else:
                     labels.append((action, -1))
                 pbar.update(1)
+
+                # don't keep the tree in memory after it has finished
+                agents[idx] = None
+
+                if tasks:
+                    active_tasks.append(tasks.popleft())
 
         # handle expand and simulate
         if expand_and_sim_batch:
@@ -168,16 +179,16 @@ def compute_labels(board_positions, active_players, expert, workers):
                 node = NeuralSearchNode(env, network_policy=policy)
                 try:
                     job, args = gen.send((node, winner))
-                    tasks.append((idx, job, gen, args))
+                    active_tasks.append((idx, job, gen, args))
                 except StopIteration:
-                    tasks.append((idx, "done", gen, None))
+                    active_tasks.append((idx, "done", gen, None))
 
     return np.stack(labels, axis=0)
 
 
 if __name__ == "__main__":
     board_size = 9
-    search_depth = 100
+    search_depth = 1000
     dataset_size = 100000
     validation_size = 5000
     iterations = 7
