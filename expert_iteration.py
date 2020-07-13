@@ -5,7 +5,7 @@ from anthony_net.NNAgent import NNAgent
 from nmcts.NMCTSAgent import NMCTSAgent
 from Agent import RandomAgent
 from mcts.MCTSAgent import MCTSAgent
-from anthony_net.utils import convert_state, generate_sample
+from anthony_net.utils import generate_sample, convert_state_batch
 import numpy as np
 from minihex import player, HexGame
 import tqdm
@@ -14,7 +14,7 @@ from anthony_net.network import gen_model, selective_loss
 import itertools
 from nmcts.NeuralSearchNode import NeuralSearchNode
 from multiprocessing import Pool, cpu_count
-from utils import simulate, nmcts_builder, dataset_converter
+from utils import simulate, nmcts_builder, step_and_rollout
 
 
 class KerasBar(tqdm.tqdm):
@@ -36,8 +36,15 @@ def build_apprentice(train_dataset, val_dataset, board_size, iteration):
     training_data, training_labels = train_dataset
     validation_data, validation_labels = val_dataset
 
-    training_data = np.stack([example for example in workers.imap(dataset_converter, training_data, chunksize=10)])
-    validation_data = np.stack([example for example in workers.imap(dataset_converter, validation_data, chunksize=10)])
+    tmp = [player.BLACK] * len(training_data)
+    sim_args = zip(tmp, training_data, tmp)
+    training_data = [sim for sim in workers.starmap(HexGame, sim_args, chunksize=10)]
+    training_data = np.stack(convert_state_batch(training_data))
+    
+    tmp = [player.BLACK] * len(validation_data)
+    sim_args = zip(tmp, validation_data, tmp)
+    validation_data = [sim for sim in workers.starmap(HexGame, sim_args, chunksize=10)]
+    validation_data = np.stack(convert_state_batch(validation_data))
     
     training_labels = tf.one_hot(training_labels, board_size ** 2)
     training_labels = (training_labels[:, 0, :], training_labels[:, 1, :])
@@ -103,7 +110,7 @@ def compute_labels(board_positions, active_players, expert, workers):
 
     sim_args = zip(active_players, board_positions, active_players)
     initial_sims = [sim for sim in  tqdm.tqdm(workers.starmap(HexGame, sim_args, chunksize=chunksize), desc="Building Environments", position=2, leave=False, total=batch_size)]
-    converted_boards = np.stack([example for example in workers.imap(dataset_converter, board_positions, chunksize=chunksize)])
+    converted_boards = convert_state_batch(initial_sims)
     policies = nn_agent.get_scores(converted_boards, active_players)
 
     nmcts_args = zip([depth] * batch_size, initial_sims, policies)
@@ -118,6 +125,7 @@ def compute_labels(board_positions, active_players, expert, workers):
     while tasks:
         node_creation_batch = list()
         simulation_batch = list()
+        expand_and_sim_batch = list()
         for task in task_iter(tasks):
             job = task[1]
             if job == "expand":
@@ -128,6 +136,8 @@ def compute_labels(board_positions, active_players, expert, workers):
                 idx, job, gen, args = task
                 job, args = gen.send(None)
                 tasks.append((idx, job, gen, args))
+            elif job == "expand_and_simulate":
+                expand_and_sim_batch.append(task)
             elif job == "done":
                 idx, _, _, _ = task
                 action = agents[idx].act_greedy(None, None, None)
@@ -137,14 +147,47 @@ def compute_labels(board_positions, active_players, expert, workers):
                     labels.append((action, -1))
                 pbar.update(1)
 
+        # handle expand and simulate
+        if expand_and_sim_batch:
+            sim_batch = list()
+            history_batch = list()
+            for task in expand_and_sim_batch:
+                idx, _, _, action_history = task
+                sim_batch.append(initial_sims[idx])
+                history_batch.append(action_history)
+            results = workers.starmap(
+                step_and_rollout, zip(sim_batch, history_batch))
+            envs = list()
+            players = list()
+            winners = list()
+            for env, winner in results:
+                envs.append(env)
+                players.append(env.active_player)
+                winners.append(winner)
+            board_batch = np.stack(convert_state_batch(envs))
+            players = np.stack(players)
+            policies = nn_agent.get_scores(board_batch, players)
+
+            result_iter = zip(expand_and_sim_batch, policies, winners, envs)
+            for task, policy, winner, env in result_iter:
+                idx, _, gen, action_history = task
+                node = NeuralSearchNode(
+                    env, agent=nn_agent, network_policy=policy)
+                try:
+                    job, args = gen.send((node, winner))
+                    tasks.append((idx, job, gen, args))
+                except StopIteration:
+                    tasks.append((idx, "done", gen, None))
+
         # handle expansions
         if node_creation_batch:
-            board_batch = list()
+            sim_batch = list()
             player_batch = list()
             for task in node_creation_batch:
                 _, _, _, sim = task
-                board_batch.append(convert_state(sim))
+                sim_batch.append(sim)
                 player_batch.append(sim.active_player)
+            board_batch = convert_state_batch(sim_batch)
             board_batch = np.stack(board_batch)
             player_batch = np.stack(player_batch)
 
@@ -163,9 +206,8 @@ def compute_labels(board_positions, active_players, expert, workers):
         # handle simulation
         if simulation_batch:
             sims = [task[3] for task in simulation_batch]
-            board_sizes = [sim.board_size for sim in sims]
-            winners = [winner for winner in workers.starmap(
-                simulate, zip(sims, board_sizes))]
+            winners = [winner for winner in workers.map(
+                simulate, sims)]
             for task, winner in zip(simulation_batch, winners):
                 idx, job, gen, _ = task
                 try:
@@ -179,15 +221,17 @@ def compute_labels(board_positions, active_players, expert, workers):
 
 if __name__ == "__main__":
     board_size = 9
-    search_depth = 5
-    dataset_size = 100000
-    validation_size = 1000
-    iterations = 3
+    search_depth = 1000
+    dataset_size = 100
+    validation_size = 10
+    iterations = 1
 
     expert = NMCTSAgent(board_size=board_size,
                         depth=search_depth, model_file="best_model.h5")
     with Pool(cpu_count() - 2) as workers:
-        for idx in tqdm.tqdm(range(iterations), desc="Training Experts", position=0):
+        pbar = tqdm.tqdm(range(iterations),
+                         desc="Training Experts", position=0)
+        for idx in pbar:
             # apprenticeship learning
             # -----
             training_data, active_players = generate_samples(
