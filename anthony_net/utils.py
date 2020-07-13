@@ -16,8 +16,10 @@ def convert_state(sim):
     converted_state[player.BLACK, 2:-2, 2:-2] = board == player.BLACK
     converted_state[player.WHITE, 2:-2, 2:-2] = board == player.WHITE
 
-    region_black = np.pad(sim.regions[player.BLACK], 1)
-    region_white = np.pad(sim.regions[player.WHITE], 1)
+    region_black = np.ones((board_size + 4, board_size + 4))
+    region_black[1:-1, 1:-1] = sim.regions[player.BLACK]
+    region_white = np.ones((board_size + 4, board_size + 4))
+    region_white[1:-1, 1:-1] = sim.regions[player.WHITE]
 
     positions = np.where(region_black == region_black[1, 1])
     converted_state[2][positions] = 1
