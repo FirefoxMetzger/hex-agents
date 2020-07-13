@@ -12,12 +12,24 @@ VALUE_CONSTANT = np.sqrt(2)
 
 
 class SearchNode(object):
-    def __init__(self, env):
+    def __init__(self, env, lean=False):
         self.total_simulations = 0.0
         self.total_wins = 0
         self.children = dict()
-        self.env = env
+
+        if lean:
+            # lean nodes don't store the environment
+            # they can't call add_leaf, expand, or simulate
+            # however, they have small footprint and are useful
+            # in NMCTS batch expansion
+            self.env = None
+        else:
+            self.env = env
+
         self.available_actions = env.get_possible_actions()
+        self.winner = env.winner
+        self.is_terminal = env.done
+        self.active_player = env.active_player
 
         board_size = env.board.shape[1]
         self.greedy_Q = np.inf * np.ones(board_size ** 2,
@@ -28,7 +40,7 @@ class SearchNode(object):
 
     def add_leaf(self):
         if self.is_terminal:
-            winner = self.env.winner
+            winner = self.winner
             self.backup(winner)
             return winner
 
@@ -50,10 +62,6 @@ class SearchNode(object):
         else:
             return self.Q[action]
 
-    @property
-    def is_terminal(self):
-        return self.env.done
-
     def select(self):
         action_scores = self.Q[self.available_actions]
         best_actions = np.where(action_scores == np.max(action_scores))[0]
@@ -71,12 +79,12 @@ class SearchNode(object):
 
     def simulate(self):
         if self.is_terminal:
-            return self.env.winner
+            return self.winner
 
         env = HexEnv(
             opponent_policy=self.agent.act,
-            player_color=self.env.active_player,
-            active_player=self.env.active_player,
+            player_color=self.active_player,
+            active_player=self.active_player,
             board=self.env.board.copy(),
             regions=self.env.regions.copy())
 
@@ -90,7 +98,7 @@ class SearchNode(object):
 
     def backup(self, winner, action=None):
         self.total_simulations += 1
-        if self.env.active_player == winner:
+        if self.active_player == winner:
             self.total_wins += 1
 
         if action is not None:

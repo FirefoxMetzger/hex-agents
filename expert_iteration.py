@@ -5,7 +5,7 @@ from anthony_net.NNAgent import NNAgent
 from nmcts.NMCTSAgent import NMCTSAgent
 from Agent import RandomAgent
 from mcts.MCTSAgent import MCTSAgent
-from anthony_net.utils import convert_state, generate_sample, convert_state_batch
+from anthony_net.utils import generate_sample, convert_state_batch
 import numpy as np
 from minihex import player, HexGame
 import tqdm
@@ -14,7 +14,7 @@ from anthony_net.network import gen_model, selective_loss
 import itertools
 from nmcts.NeuralSearchNode import NeuralSearchNode
 from multiprocessing import Pool, cpu_count
-from rollout import simulate
+from rollout import simulate, step_and_rollout
 
 
 def task_iter(queue):
@@ -125,6 +125,7 @@ def compute_labels(board_positions, active_players, expert, workers):
     while tasks:
         node_creation_batch = list()
         simulation_batch = list()
+        expand_and_sim_batch = list()
         for task in task_iter(tasks):
             job = task[1]
             if job == "expand":
@@ -135,6 +136,8 @@ def compute_labels(board_positions, active_players, expert, workers):
                 idx, job, gen, args = task
                 job, args = gen.send(None)
                 tasks.append((idx, job, gen, args))
+            elif job == "expand_and_simulate":
+                expand_and_sim_batch.append(task)
             elif job == "done":
                 idx, _, _, _ = task
                 action = agents[idx].act_greedy(None, None, None)
@@ -143,6 +146,38 @@ def compute_labels(board_positions, active_players, expert, workers):
                 else:
                     labels.append((action, -1))
                 pbar.update(1)
+
+        # handle expand and simulate
+        if expand_and_sim_batch:
+            sim_batch = list()
+            history_batch = list()
+            for task in expand_and_sim_batch:
+                idx, _, _, action_history = task
+                sim_batch.append(initial_sims[idx])
+                history_batch.append(action_history)
+            results = workers.starmap(
+                step_and_rollout, zip(sim_batch, history_batch))
+            envs = list()
+            players = list()
+            winners = list()
+            for env, winner in results:
+                envs.append(env)
+                players.append(env.active_player)
+                winners.append(winner)
+            board_batch = np.stack(convert_state_batch(envs))
+            players = np.stack(players)
+            policies = nn_agent.get_scores(board_batch, players)
+
+            result_iter = zip(expand_and_sim_batch, policies, winners, envs)
+            for task, policy, winner, env in result_iter:
+                idx, _, gen, action_history = task
+                node = NeuralSearchNode(
+                    env, agent=nn_agent, network_policy=policy)
+                try:
+                    job, args = gen.send((node, winner))
+                    tasks.append((idx, job, gen, args))
+                except StopIteration:
+                    tasks.append((idx, "done", gen, None))
 
         # handle expansions
         if node_creation_batch:
@@ -171,9 +206,8 @@ def compute_labels(board_positions, active_players, expert, workers):
         # handle simulation
         if simulation_batch:
             sims = [task[3] for task in simulation_batch]
-            board_sizes = [sim.board_size for sim in sims]
-            winners = [winner for winner in workers.starmap(
-                simulate, zip(sims, board_sizes))]
+            winners = [winner for winner in workers.map(
+                simulate, sims)]
             for task, winner in zip(simulation_batch, winners):
                 idx, job, gen, _ = task
                 try:
@@ -187,15 +221,17 @@ def compute_labels(board_positions, active_players, expert, workers):
 
 if __name__ == "__main__":
     board_size = 5
-    search_depth = 10
-    dataset_size = 10000
+    search_depth = 1000
+    dataset_size = 100
     validation_size = 1
     iterations = 2
 
     expert = NMCTSAgent(board_size=board_size,
                         depth=search_depth, model_file="best_model.h5")
     with Pool(cpu_count() - 2) as workers:
-        for idx in tqdm.tqdm(range(iterations), desc="Training Experts", position=0):
+        pbar = tqdm.tqdm(range(iterations),
+                         desc="Training Experts", position=0)
+        for idx in pbar:
             # apprenticeship learning
             # -----
             training_data, active_players = generate_samples(

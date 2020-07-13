@@ -1,10 +1,11 @@
 
 from minihex.HexGame import HexEnv
 from Agent import RandomAgent
+from copy import deepcopy
 
 
 def simulate(env, board_size=5):
-    agent = RandomAgent(board_size)
+    agent = RandomAgent(env.board_size)
     env = HexEnv(
         opponent_policy=agent.act,
         player_color=env.active_player,
@@ -19,3 +20,15 @@ def simulate(env, board_size=5):
         state, reward, done, info = env.step(action)
 
     return env.simulator.winner
+
+
+def step_and_rollout(env, action_history):
+    new_env = deepcopy(env)
+    for action in action_history:
+        new_env.make_move(action)
+
+    winner = new_env.winner
+    if winner is None:
+        winner = simulate(new_env)
+
+    return new_env, winner
