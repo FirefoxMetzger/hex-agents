@@ -14,7 +14,11 @@ from anthony_net.network import gen_model, selective_loss
 import itertools
 from nmcts.NeuralSearchNode import NeuralSearchNode
 from multiprocessing import Pool, cpu_count
-from rollout import simulate
+from utils import simulate, nmcts_builder, dataset_converter
+
+
+class KerasBar(tqdm.tqdm):
+    pass
 
 
 def task_iter(queue):
@@ -32,16 +36,9 @@ def build_apprentice(train_dataset, val_dataset, board_size, iteration):
     training_data, training_labels = train_dataset
     validation_data, validation_labels = val_dataset
 
-    training_data = np.stack([convert_state(
-        HexGame(player.BLACK, example, player.BLACK))
-        for example in training_data])
-    validation_data = np.stack([convert_state(
-        HexGame(player.BLACK, example, player.BLACK))
-        for example in validation_data])
-
-    for idx, example in enumerate(training_data):
-        training_data
-
+    training_data = np.stack([example for example in workers.imap(dataset_converter, training_data, chunksize=10)])
+    validation_data = np.stack([example for example in workers.imap(dataset_converter, validation_data, chunksize=10)])
+    
     training_labels = tf.one_hot(training_labels, board_size ** 2)
     training_labels = (training_labels[:, 0, :], training_labels[:, 1, :])
     validation_labels = tf.one_hot(validation_labels, board_size ** 2)
@@ -76,17 +73,18 @@ def build_apprentice(train_dataset, val_dataset, board_size, iteration):
     return NNAgent(network)
 
 
-def generate_samples(num_samples, board_size):
+def generate_samples(num_samples, board_size, workers):
     # the paper generates a rollout via selfplay and then samples a single
     # position from the entire trajectory to avoid correlations in the data
     # Here we improve this, by directly sampling a game position randomly
     # (0 correlation with other states in the dataset)
     board_positions = list()
     active_players = list()
-    pbar = tqdm.tqdm(range(num_samples),
-                     desc="Generating Samples", position=1, leave=False)
-    for idx in pbar:
-        sim, active_player = generate_sample(board_size)
+
+    chunksize = 10
+    result = tqdm.tqdm(workers.imap(generate_sample, [board_size] * num_samples, chunksize=chunksize),
+                       desc="Generating Samples", position=1, leave=False, total=num_samples)
+    for sim, active_player in result:
         board_positions.append(sim.board)
         active_players.append(active_player)
     return np.stack(board_positions, axis=0), np.stack(active_players, axis=0)
@@ -97,25 +95,20 @@ def compute_labels(board_positions, active_players, expert, workers):
     # ---
     labels = list()
     batch_size = active_players.shape[0]
+    chunksize = 20
     nn_agent = expert.agent
     depth = expert.depth
     pbar = tqdm.tqdm(desc="Generating Labels",
                      total=batch_size, position=1, leave=False)
 
-    initial_sims = workers.starmap(HexGame, zip(
-        active_players, board_positions, active_players))
-    converted_boards = np.stack([convert_state(sim) for sim in initial_sims])
+    sim_args = zip(active_players, board_positions, active_players)
+    initial_sims = [sim for sim in  tqdm.tqdm(workers.starmap(HexGame, sim_args, chunksize=chunksize), desc="Building Environments", position=2, leave=False, total=batch_size)]
+    converted_boards = np.stack([example for example in workers.imap(dataset_converter, board_positions, chunksize=chunksize)])
     policies = nn_agent.get_scores(converted_boards, active_players)
 
-    agents = list()
-    for idx in range(batch_size):
-        board = converted_boards[idx]
-        active_player = active_players[idx]
-        initial_policy = policies[idx]
-        env = initial_sims[idx]
-        agent = NMCTSAgent(depth=depth, env=env,
-                           agent=nn_agent, network_policy=initial_policy)
-        agents.append(agent)
+    nmcts_args = zip([depth] * batch_size, initial_sims, policies)
+    agents = [agent for agent in tqdm.tqdm(
+        workers.imap(nmcts_builder, nmcts_args, chunksize=chunksize), desc="Initializing Agents", position=2, leave=False, total=batch_size)]
 
     tasks = deque()
     for idx, agent in enumerate(agents):
@@ -186,9 +179,9 @@ def compute_labels(board_positions, active_players, expert, workers):
 
 if __name__ == "__main__":
     board_size = 9
-    search_depth = 1000
+    search_depth = 5
     dataset_size = 100000
-    validation_size = 5000
+    validation_size = 1000
     iterations = 3
 
     expert = NMCTSAgent(board_size=board_size,
@@ -198,12 +191,12 @@ if __name__ == "__main__":
             # apprenticeship learning
             # -----
             training_data, active_players = generate_samples(
-                dataset_size, board_size)
+                dataset_size, board_size, workers)
             training_labels = compute_labels(
                 training_data, active_players, expert, workers)
 
             validation_data, active_players = generate_samples(
-                validation_size, board_size)
+                validation_size, board_size, workers)
             validation_labels = compute_labels(
                 validation_data, active_players, expert, workers)
 

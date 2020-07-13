@@ -11,7 +11,7 @@ WEIGHT_a = 100
 class NeuralSearchNode(SearchNode):
     def __init__(self, env, agent=None, model_file=None, network_policy=None):
         super(NeuralSearchNode, self).__init__(env)
-        if agent is None:
+        if agent is None and isinstance(model_file, str):
             self.network_agent = NNAgent(model_file)
         else:
             self.network_agent = agent

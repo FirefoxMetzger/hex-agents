@@ -1,6 +1,7 @@
-
-from minihex.HexGame import HexEnv
+from minihex.HexGame import HexEnv, HexGame, player
 from Agent import RandomAgent
+from nmcts.NMCTSAgent import NMCTSAgent
+from anthony_net.utils import convert_state
 
 
 def simulate(env, board_size=5):
@@ -19,3 +20,13 @@ def simulate(env, board_size=5):
         state, reward, done, info = env.step(action)
 
     return env.simulator.winner
+
+
+def nmcts_builder(args):
+    depth, env, initial_policy = args
+    return NMCTSAgent(depth=depth, env=env,
+                      network_policy=initial_policy)
+
+
+def dataset_converter(example):
+    return convert_state(HexGame(player.BLACK, example, player.BLACK))
