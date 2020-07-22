@@ -10,7 +10,7 @@ WEIGHT_a = 100
 
 class NeuralSearchNode(SearchNode):
     def __init__(self, env, agent=None, model_file=None, network_policy=None):
-        super(NeuralSearchNode, self).__init__(env, lean=True)
+        super(NeuralSearchNode, self).__init__(env)
         if agent is None and isinstance(model_file, str):
             self.network_agent = NNAgent(model_file)
         else:
@@ -37,28 +37,6 @@ class NeuralSearchNode(SearchNode):
         predicted_q = self.network_policy[action]
         self.Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
         self.greedy_Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
-
-    def add_leaf_deferred(self, action_history=None):
-        if action_history is None:
-            action_history = list()
-
-        if self.is_terminal:
-            winner = self.winner
-            self.backup(winner)
-            return winner
-
-        action = self.select()
-        action_history.append(action)
-
-        if action in self.children:
-            gen = self.children[action].add_leaf_deferred(action_history)
-            winner = yield from gen
-        else:
-            gen = self.batched_expand_and_simulate(action, action_history)
-            winner = yield from gen
-
-        self.backup(winner, action)
-        return winner
 
     def batched_expand_and_simulate(self, action, action_history):
         child, winner = yield ("expand_and_simulate", action_history)

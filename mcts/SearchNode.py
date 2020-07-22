@@ -12,19 +12,12 @@ VALUE_CONSTANT = np.sqrt(2)
 
 
 class SearchNode(object):
-    def __init__(self, env, lean=False):
+    def __init__(self, env):
         self.total_simulations = 0.0
         self.total_wins = 0
         self.children = dict()
 
-        if lean:
-            # lean nodes don't store the environment
-            # they can't call add_leaf, expand, or simulate
-            # however, they have small footprint and are useful
-            # in NMCTS batch expansion
-            self.env = None
-        else:
-            self.env = env
+        self.env = env
 
         self.available_actions = env.get_possible_actions()
         self.winner = env.winner
@@ -115,3 +108,33 @@ class SearchNode(object):
                                 np.sqrt(np.log(parent_sims) / child_sims))
         self.Q[action] = win_rate + upper_bound_estimate
         self.greedy_Q[action] = win_rate
+
+    def add_leaf_deferred(self, action_history=None):
+        if action_history is None:
+            action_history = list()
+
+        if self.is_terminal:
+            winner = self.winner
+            self.backup(winner)
+            return winner
+
+        action = self.select()
+        action_history.append(action)
+
+        if action in self.children:
+            gen = self.children[action].add_leaf_deferred(action_history)
+            winner = yield from gen
+        else:
+            gen = self.batched_expand_and_simulate(action, action_history)
+            winner = yield from gen
+
+        self.backup(winner, action)
+        return winner
+
+    def batched_expand_and_simulate(self, action, action_history):
+        child, winner = yield ("mcts_expand_and_simulate", action_history)
+
+        self.children[action] = child
+        child.backup(winner)
+
+        return winner

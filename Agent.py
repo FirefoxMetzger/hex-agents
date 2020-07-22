@@ -28,6 +28,12 @@ class RandomAgent(Agent):
         idx = int(random.random() * len(valid_actions))
         return valid_actions[idx]
 
+    def act_greedy(self, state, active_player, info):
+        return self.act(state, active_player, info)
+
+    def update_root_state_deferred(self, info):
+        return
+
     def reset(self, env):
         return
 

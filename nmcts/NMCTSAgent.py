@@ -22,16 +22,6 @@ class NMCTSAgent(MCTSAgent):
         self.depth = depth
         self.agent = self.root_node.network_agent
 
-    def deferred_plan(self):
-        for _ in range(self.depth):
-            yield from self.root_node.add_leaf_deferred()
-
-    def act_greedy(self, state, active_player, info):
-        # creates a generator that yields states to be evaluated by the network
-        self.update_root_state(state, info)
-        action = self.policy()
-        return action
-
     def reset(self, env):
         self.root_node = NeuralSearchNode(env, agent=self.agent)
 
