@@ -11,12 +11,14 @@ import random
 agent_side = player.BLACK if random.random() < 0.5 else player.WHITE
 opponent_side = player.WHITE if agent_side == player.BLACK else player.BLACK
 
-env = gym.make("hex-v0", opponent_policy=None, board_size=5, player_color=opponent_side)
+env = gym.make("hex-v0", opponent_policy=None,
+               board_size=5, player_color=opponent_side)
 state = env.reset()
 hexgame = env.simulator
 opponent = MCTSAgent(hexgame, depth=1000)
 
-env = gym.make("hex-v0", opponent_policy=opponent.act, board_size=5, player_color=agent_side)
+env = gym.make("hex-v0", opponent_policy=opponent.act,
+               board_size=5, player_color=agent_side)
 agent = NNAgent("best_model.h5")
 
 total_wins = 0

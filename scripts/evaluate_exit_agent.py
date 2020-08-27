@@ -14,6 +14,7 @@ import json
 from utils import step_and_rollout
 from anthony_net.utils import convert_state_batch
 from nmcts.NeuralSearchNode import NeuralSearchNode
+from mcts.SearchNode import SearchNode
 from multiprocessing import Pool, cpu_count
 
 
@@ -50,21 +51,25 @@ def play_match(mcts_depth, nmcts_depth, model_file, board_size):
     yield ("done", reward)
 
 
-def evaluate_agent(num_matches, workers):
-    board_size = 5
-    nn_agent = NNAgent("best_model.h5")
+def evaluate_agent(num_matches, workers, nmcts_depth=1000,
+                   board_size=9, model_file="best_model.h5"):
+    nn_agent = NNAgent(model_file)
     eval_agent = NMCTSAgent(agent=nn_agent,
-                            depth=30, board_size=board_size)
+                            depth=nmcts_depth, board_size=board_size)
 
-    with open(f"mcts_eval({board_size}x{board_size})big.json", "r") as rating_file:
+    rating_file = f"mcts_eval({board_size}x{board_size})big.json"
+    with open(rating_file, "r") as rating_file:
         mcts_ratings = json.load(rating_file)
 
     depths = [
         0, 50, 100, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000]
-    matches = [depths[random.randint(0, len(depths)-1)]
+    matches = [depths[random.randint(0, len(depths) - 1)]
                for _ in range(num_matches)]
 
-    tasks = [(idx, "init", play_match(depth, 30, "best_model.h5", board_size), None)
+    tasks = [(idx,
+              "init",
+              play_match(depth, nmcts_depth, model_file, board_size),
+              None)
              for idx, depth in enumerate(matches)]
     initial_sims = dict()
 
@@ -173,8 +178,24 @@ if __name__ == "__main__":
                     draw_probability=0.01,
                     backend="scipy")
 
-    num_matches = 2
+    model_files = ["best_model.h5"]
+    model_files += [f"best_model_iteration_{idx}.h5" for idx in range(4)]
 
+    num_matches = 50
+    board_size = 5
+    ratings = dict()
     with Pool(3) as workers:
-        eval_agent = evaluate_agent(num_matches, workers)
-        print(eval_agent.rating)
+        for idx, model in enumerate(model_files):
+            eval_agent = evaluate_agent(
+                num_matches,
+                workers,
+                board_size=board_size,
+                model_file=model,
+                nmcts_depth=25
+            )
+            ratings[idx] = {"mu": eval_agent.rating.mu,
+                            "sigma": eval_agent.rating.sigma}
+            print(eval_agent.rating)
+
+    with open(f"exit_eval({board_size}x{board_size}).json", "w") as json_file:
+        json.dump(ratings, json_file)
