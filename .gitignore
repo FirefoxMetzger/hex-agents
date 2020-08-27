@@ -3,3 +3,4 @@
 *.npy
 *.h5
 *.json
+/logs

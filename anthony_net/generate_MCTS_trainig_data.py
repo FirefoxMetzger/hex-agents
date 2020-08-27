@@ -6,7 +6,7 @@ import minihex
 import tqdm
 from multiprocessing import Pool, cpu_count
 from utils import convert_state
-from utils import generate_sample as generate_board
+from utils import generate_board
 import random
 
 
@@ -33,10 +33,10 @@ def generate_dataset(num_examples, prefix=None, board_size=5):
     labels = list()
     with Pool(cpu_count() - 2) as workers:
         return_val = list(tqdm.tqdm(workers.imap(
-                                        generate_sample,
-                                        [board_size for idx in range(num_examples)],
-                                        chunksize=1),
-                                    total=num_examples))
+            generate_sample,
+            [board_size for idx in range(num_examples)],
+            chunksize=1),
+            total=num_examples))
     for example, label in return_val:
         dataset.append(example)
         labels.append(label)

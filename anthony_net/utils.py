@@ -79,7 +79,7 @@ def convert_state(sim):
     return np.moveaxis(converted_state, 0, -1)
 
 
-def generate_sample(board_size=9):
+def generate_board(board_size=9):
     num_white_stones = np.random.randint(board_size ** 2 // 2)
     if random.random() > 0.5:
         num_black_stones = num_white_stones + 1
@@ -100,6 +100,6 @@ def generate_sample(board_size=9):
 
     sim = HexGame(active_player, board, active_player)
     while sim.done:
-        sim, active_player = generate_sample(board_size)
+        sim, active_player = generate_board(board_size)
 
     return sim, active_player
