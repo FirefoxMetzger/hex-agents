@@ -45,7 +45,7 @@ def train_network(data, labels, config):
         ]
     )
 
-    dataset_size = int(config["GLOBAL"]["dataset_size"])
+    dataset_size = data.shape[0]
     train_idx, val_idx, _, _ = train_test_split(
         np.arange(dataset_size, dtype=np.intp),
         np.ones(dataset_size, dtype=np.intp),

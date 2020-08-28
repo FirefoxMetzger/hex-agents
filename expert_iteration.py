@@ -3,27 +3,18 @@ from collections import deque
 import tensorflow as tf
 from anthony_net.NNAgent import NNAgent
 from nmcts.NMCTSAgent import NMCTSAgent
-from Agent import RandomAgent
 from mcts.MCTSAgent import MCTSAgent
 from anthony_net.utils import generate_board, convert_state_batch
 import numpy as np
 from minihex import player, HexGame
 import tqdm
-from tqdm.keras import TqdmCallback
-from anthony_net.network import gen_model, selective_loss
-import itertools
 from nmcts.NeuralSearchNode import NeuralSearchNode
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from utils import simulate, nmcts_builder, step_and_rollout
-from anthony_net.train_network import train_network, load_data
+from anthony_net.train_network import train_network
 import configparser
-from utils import save_array
+from utils import save_array, task_iter
 import os
-
-
-def task_iter(queue):
-    while queue:
-        yield queue.popleft()
 
 
 def build_expert(apprentice_agent, board_size, depth):
@@ -34,7 +25,7 @@ def build_expert(apprentice_agent, board_size, depth):
 
 def build_apprentice(samples, labels, config, workers):
     board_size = int(config["GLOBAL"]["board_size"])
-    chunksize = int(config["BuildApprentice"]["chunksize"])
+    chunksize = int(config["ExpertIteration"]["chunksize"])
 
     boards, players = samples
     sim_args = zip(players, boards, players)
@@ -59,13 +50,16 @@ def generate_samples(config, workers):
     # Here we improve this, by directly sampling a game position randomly
     # (0 correlation with other states in the dataset)
 
-    num_samples = int(config["GLOBAL"]["dataset_size"])
+    num_samples = int(config["ExpertIteration"]["dataset_size"])
     board_size = int(config["GLOBAL"]["board_size"])
 
     board_positions = list()
     active_players = list()
 
-    chunksize = int(config["GenerateSamples"]["chunksize"])
+    chunksize = int(config["ExpertIteration"]["chunksize"])
+    total_chunks = num_samples // chunksize
+    if num_samples % chunksize != 0:
+        total_chunks += 1
     result = tqdm.tqdm(workers.imap(generate_board,
                                     [board_size] * num_samples,
                                     chunksize=chunksize),
@@ -83,8 +77,8 @@ def generate_samples(config, workers):
 def compute_labels(samples, expert, config, workers):
     board_positions, active_players = samples
     labels = list()
-    batch_size = int(config["GLOBAL"]["dataset_size"])
-    chunksize = int(config["ComputeLabels"]["chunksize"])
+    batch_size = int(config["ExpertIteration"]["dataset_size"])
+    chunksize = int(config["ExpertIteration"]["chunksize"])
     nn_agent = expert.agent
     depth = expert.depth
     pbar = tqdm.tqdm(
@@ -190,11 +184,12 @@ if __name__ == "__main__":
 
     board_size = int(config["GLOBAL"]["board_size"])
     search_depth = int(config["GLOBAL"]["search_depth"])
-    iterations = int(config["GLOBAL"]["iterations"])
+    iterations = int(config["ExpertIteration"]["iterations"])
+    num_threads = int(config["GLOBAL"]["num_threads"])
 
     expert = NMCTSAgent(board_size=board_size,
                         depth=search_depth, model_file="best_model.h5")
-    with Pool(cpu_count() - 2) as workers:
+    with Pool(num_threads) as workers:
         pbar = tqdm.tqdm(range(iterations),
                          desc="Training Experts",
                          position=0)

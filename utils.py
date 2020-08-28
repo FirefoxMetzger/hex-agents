@@ -63,3 +63,8 @@ def save_array(filename):
     def decorator(func):
         return _save_array(func, filename)
     return decorator
+
+
+def task_iter(queue):
+    while queue:
+        yield queue.popleft()
