@@ -1,5 +1,4 @@
 import silence_tensorflow
-from collections import deque
 import tensorflow as tf
 from anthony_net.NNAgent import NNAgent
 from nmcts.NMCTSAgent import NMCTSAgent
@@ -15,9 +14,14 @@ from anthony_net.train_network import train_network
 import configparser
 from utils import save_array, task_iter
 import os
+from scheduler.scheduler import Scheduler
+from exIt.handlers import HandleExpandAndSimulate, HandleInit, HandleDone
+from exIt.tasks import InitExit
 
 
-def build_expert(apprentice_agent, board_size, depth):
+def build_expert(apprentice_agent, config):
+    board_size = int(config["GLOBAL"]["board_size"])
+    depth = int(config["NMCTSAgent"]["search_depth"])
     return NMCTSAgent(board_size=board_size,
                       depth=depth,
                       agent=apprentice_agent)
@@ -25,14 +29,19 @@ def build_expert(apprentice_agent, board_size, depth):
 
 def build_apprentice(samples, labels, config, workers):
     board_size = int(config["GLOBAL"]["board_size"])
-    chunksize = int(config["ExpertIteration"]["chunksize"])
+    chunksize = int(config["GLOBAL"]["chunksize"])
 
     boards, players = samples
     sim_args = zip(players, boards, players)
-    data = [sim for sim in workers.starmap(
-        HexGame,
-        sim_args,
-        chunksize=chunksize)]
+    if workers:
+        data = [sim for sim in workers.starmap(
+            HexGame,
+            sim_args,
+            chunksize=chunksize)]
+    else:
+        data = [sim for sim in map(
+            HexGame,
+            sim_args)]
     data = np.stack(convert_state_batch(data))
 
     labels = tf.one_hot(labels, board_size ** 2)
@@ -43,7 +52,7 @@ def build_apprentice(samples, labels, config, workers):
     return NNAgent(network)
 
 
-@save_array("logs/iteration_{idx}/samples")
+@save_array("logs/iteration_{idx}/data")
 def generate_samples(config, workers):
     # the paper generates a rollout via selfplay and then samples a single
     # position from the entire trajectory to avoid correlations in the data
@@ -56,125 +65,59 @@ def generate_samples(config, workers):
     board_positions = list()
     active_players = list()
 
-    chunksize = int(config["ExpertIteration"]["chunksize"])
-    total_chunks = num_samples // chunksize
-    if num_samples % chunksize != 0:
-        total_chunks += 1
-    result = tqdm.tqdm(workers.imap(generate_board,
-                                    [board_size] * num_samples,
-                                    chunksize=chunksize),
-                       desc="Generating Samples",
-                       position=1,
-                       leave=False,
-                       total=num_samples)
+    chunksize = int(config["GLOBAL"]["chunksize"])
+    result = tqdm.tqdm(workers.imap(
+        generate_board,
+        [board_size] * num_samples,
+        chunksize=chunksize),
+        desc="Generating Samples",
+        position=1,
+        leave=False,
+        total=num_samples)
     for sim, active_player in result:
         board_positions.append(sim.board)
         active_players.append(active_player)
+
     return np.stack(board_positions, axis=0), np.stack(active_players, axis=0)
 
 
 @save_array("logs/iteration_{idx}/labels")
 def compute_labels(samples, expert, config, workers):
-    board_positions, active_players = samples
-    labels = list()
-    batch_size = int(config["ExpertIteration"]["dataset_size"])
-    chunksize = int(config["ExpertIteration"]["chunksize"])
-    nn_agent = expert.agent
-    depth = expert.depth
+    dataset_size = int(config["ExpertIteration"]["dataset_size"])
+    handlers = [
+        HandleExpandAndSimulate(
+            nn_agent=expert.agent,
+            workers=workers
+        ),
+        HandleInit(
+            nn_agent=expert.agent,
+            config=config,
+            workers=workers
+        ),
+        HandleDone(dataset_size)]
+    sched = Scheduler(handlers)
+
+    queue = [InitExit(sample, idx) for idx, sample in enumerate(zip(*samples))]
+    max_active = int(config["ExpertIteration"]["active_simulations"])
+    active_tasks = list()
+
     pbar = tqdm.tqdm(
         desc="Generating Labels",
-        total=batch_size,
+        total=dataset_size,
         position=1,
         leave=False)
+    while queue or active_tasks:
+        if len(active_tasks) < max_active:
+            num_new = max_active - len(active_tasks)
+            num_new = min(num_new, len(queue))
+            new_tasks = queue[:num_new]
+            active_tasks += new_tasks
+            queue = queue[num_new:]
+            pbar.update(num_new)
 
-    sim_args = zip(active_players, board_positions, active_players)
-    initial_sims = [sim for sim in tqdm.tqdm(
-        workers.starmap(HexGame,
-                        sim_args,
-                        chunksize=chunksize),
-        desc="Building Environments",
-        position=2,
-        leave=False,
-        total=batch_size)]
-    converted_boards = convert_state_batch(initial_sims)
-    policies = nn_agent.get_scores(converted_boards, active_players)
+        active_tasks = sched.process(active_tasks)
 
-    nmcts_args = zip([depth] * batch_size, initial_sims, policies)
-    agents = [agent for agent in tqdm.tqdm(
-        workers.imap(nmcts_builder,
-                     nmcts_args,
-                     chunksize=chunksize),
-        desc="Initializing Agents",
-        position=2,
-        leave=False,
-        total=batch_size)]
-
-    tasks = deque()
-    for idx, agent in enumerate(agents):
-        gen = agent.deferred_plan()
-        tasks.append((idx, "init", gen, None))
-
-    active_queue_size = int(512 * 3)
-    active_tasks = deque()
-    for idx in range(min(active_queue_size, len(tasks))):
-        active_tasks.append(tasks.popleft())
-
-    while active_tasks:
-        expand_and_sim_batch = list()
-        for task in task_iter(active_tasks):
-            job = task[1]
-            if job == "init":
-                idx, job, gen, args = task
-                job, args = gen.send(None)
-                active_tasks.append((idx, job, gen, args))
-            elif job == "expand_and_simulate":
-                expand_and_sim_batch.append(task)
-            elif job == "done":
-                idx, _, _, _ = task
-                action = agents[idx].act_greedy(None, None, None)
-                if initial_sims[idx].active_player == player.WHITE:
-                    labels.append((-1, action))
-                else:
-                    labels.append((action, -1))
-                pbar.update(1)
-
-                # don't keep the tree in memory after it has finished
-                agents[idx] = None
-
-                if tasks:
-                    active_tasks.append(tasks.popleft())
-
-        # handle expand and simulate
-        if expand_and_sim_batch:
-            sim_batch = list()
-            history_batch = list()
-            for task in expand_and_sim_batch:
-                idx, _, _, action_history = task
-                sim_batch.append(initial_sims[idx])
-                history_batch.append(action_history)
-            results = workers.starmap(
-                step_and_rollout, zip(sim_batch, history_batch))
-            envs = list()
-            players = list()
-            winners = list()
-            for env, winner in results:
-                envs.append(env)
-                players.append(env.active_player)
-                winners.append(winner)
-            board_batch = np.stack(convert_state_batch(envs))
-            players = np.stack(players)
-            policies = nn_agent.get_scores(board_batch, players)
-
-            result_iter = zip(expand_and_sim_batch, policies, winners, envs)
-            for task, policy, winner, env in result_iter:
-                idx, _, gen, action_history = task
-                node = NeuralSearchNode(env, network_policy=policy)
-                try:
-                    job, args = gen.send((node, winner))
-                    active_tasks.append((idx, job, gen, args))
-                except StopIteration:
-                    active_tasks.append((idx, "done", gen, None))
-
+    labels = handlers[-1].labels
     return np.stack(labels, axis=0)
 
 
@@ -183,12 +126,14 @@ if __name__ == "__main__":
     config.read('ExIt.ini')
 
     board_size = int(config["GLOBAL"]["board_size"])
-    search_depth = int(config["GLOBAL"]["search_depth"])
     iterations = int(config["ExpertIteration"]["iterations"])
     num_threads = int(config["GLOBAL"]["num_threads"])
 
-    expert = NMCTSAgent(board_size=board_size,
-                        depth=search_depth, model_file="best_model.h5")
+    depth = int(config["NMCTSAgent"]["search_depth"])
+    expert = NMCTSAgent(
+        board_size=board_size,
+        depth=depth,
+        model_file="best_model.h5")
     with Pool(num_threads) as workers:
         pbar = tqdm.tqdm(range(iterations),
                          desc="Training Experts",
@@ -204,4 +149,4 @@ if __name__ == "__main__":
 
             apprentice = build_apprentice(samples, labels, config, workers)
 
-            expert = build_expert(apprentice, board_size, search_depth)
+            expert = build_expert(apprentice, config)

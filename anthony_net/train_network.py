@@ -2,28 +2,34 @@ import pickle
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
+from minihex import HexGame
 
-from .network import gen_model
-from .network import selective_loss, selective_CategoricalAccuracy
+from anthony_net.network import gen_model
+from anthony_net.network import selective_loss, selective_CategoricalAccuracy
+from anthony_net.utils import convert_state_batch
 
 
-def load_data(prefix=None, max_size=None, postfix=None):
-    if prefix is None:
-        prefix = ""
+def load_data(data_file, label_file, config, workers=None, max_size=None):
+    boards = np.load(data_file)['arr_0']
+    players = np.load(data_file)['arr_1']
+    labels = np.load(label_file)['arr_0']
+
+    chunksize = int(config["GLOBAL"]["chunksize"])
+    if workers:
+        sim_args = zip(players, boards, players)
+        data = [sim for sim in workers.starmap(
+            HexGame,
+            sim_args,
+            chunksize=chunksize)]
     else:
-        prefix += "_"
+        data = [sim for sim in map(
+            HexGame,
+            players,
+            boards,
+            players)]
+    data = np.stack(convert_state_batch(data))
 
-    if postfix is None:
-        postfix = ""
-    else:
-        postfix = "_" + postfix
-
-    with open(f"{prefix}data{postfix}.npy", "rb") as in_file:
-        data = np.load(in_file)
-    with open(f"{prefix}labels{postfix}.npy", "rb") as in_file:
-        labels = np.load(in_file)
-
-    board_size = data.shape[2] - 4
+    board_size = int(config["GLOBAL"]["board_size"])
     labels = tf.one_hot(labels, board_size ** 2)
 
     if max_size is None:
@@ -88,6 +94,8 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('ExIt.ini')
 
-    data, labels = load_data("training")
+    data_file = config["nnEval"]["training_file"]
+    label_file = config["nnEval"]["label_file"]
+    data, labels = load_data(data_file, label_file, config)
 
     train_network(data, labels, config)

@@ -5,6 +5,8 @@ from anthony_net.NNAgent import NNAgent
 from minihex.HexGame import HexEnv
 import random
 
+from exIt.tasks import ExpandAndSimulate
+
 WEIGHT_a = 100
 
 
@@ -39,7 +41,8 @@ class NeuralSearchNode(SearchNode):
         self.greedy_Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
 
     def batched_expand_and_simulate(self, action, action_history):
-        child, winner = yield ("expand_and_simulate", action_history)
+        task = ExpandAndSimulate(action_history=action_history)
+        child, winner = yield task
 
         self.children[action] = child
         child.backup(winner)
