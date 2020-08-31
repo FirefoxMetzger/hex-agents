@@ -64,9 +64,5 @@ class FinalHandler(Handler):
     pass
 
 
-class InitTask(Task):
-    pass
-
-
 class DoneTask(Task):
     pass

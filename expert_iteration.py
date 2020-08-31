@@ -97,7 +97,8 @@ def compute_labels(samples, expert, config, workers):
 
     queue = [InitExit(sample, idx) for idx, sample in enumerate(zip(*samples))]
     max_active = int(config["ExpertIteration"]["active_simulations"])
-    active_tasks = list()
+    active_tasks = queue[:max_active]
+    queue = queue[max_active:]
 
     pbar = tqdm.tqdm(
         desc="Generating Labels",
