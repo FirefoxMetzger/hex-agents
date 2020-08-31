@@ -7,16 +7,14 @@ from anthony_net.utils import generate_board, convert_state_batch
 import numpy as np
 from minihex import player, HexGame
 import tqdm
-from nmcts.NeuralSearchNode import NeuralSearchNode
 from multiprocessing import Pool
-from utils import simulate, nmcts_builder, step_and_rollout
 from anthony_net.train_network import train_network
 import configparser
-from utils import save_array, task_iter
+from utils import save_array
 import os
 from scheduler.scheduler import Scheduler
-from exIt.handlers import HandleExpandAndSimulate, HandleInit, HandleDone
-from exIt.tasks import InitExit
+from scheduler.handlers import HandleExpandAndSimulate, HandleInit, HandleDone
+from scheduler.tasks import InitExit
 
 
 def build_expert(apprentice_agent, config):

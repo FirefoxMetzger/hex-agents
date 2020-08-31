@@ -5,7 +5,7 @@ from anthony_net.NNAgent import NNAgent
 from minihex.HexGame import HexEnv
 import random
 
-from exIt.tasks import ExpandAndSimulate
+from scheduler.tasks import ExpandAndSimulate
 
 WEIGHT_a = 100
 
