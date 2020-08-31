@@ -30,7 +30,9 @@ class HandleInit(Handler):
             active_players.append(active_player)
             sims.append(sim)
         converted_boards = convert_state_batch(sims)
-        policies = self.nn_agent.get_scores(converted_boards, np.asarray(active_players))
+        policies = self.nn_agent.get_scores(
+            converted_boards,
+            np.asarray(active_players))
 
         for idx, task in enumerate(batch):
             agent = NMCTSAgent(
