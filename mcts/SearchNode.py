@@ -7,6 +7,7 @@ from copy import deepcopy
 from Agent import RandomAgent
 import random
 
+from scheduler.tasks import MCTSExpandAndSimulate
 
 VALUE_CONSTANT = np.sqrt(2)
 
@@ -109,30 +110,30 @@ class SearchNode(object):
         self.Q[action] = win_rate + upper_bound_estimate
         self.greedy_Q[action] = win_rate
 
-    def add_leaf_deferred(self, action_history=None):
-        if action_history is None:
-            action_history = list()
-
+    def add_leaf_deferred(self):
         if self.is_terminal:
             winner = self.winner
             self.backup(winner)
             return winner
 
         action = self.select()
-        action_history.append(action)
 
         if action in self.children:
-            gen = self.children[action].add_leaf_deferred(action_history)
+            gen = self.children[action].add_leaf_deferred()
             winner = yield from gen
         else:
-            gen = self.batched_expand_and_simulate(action, action_history)
+            gen = self.batched_expand_and_simulate(action)
             winner = yield from gen
 
         self.backup(winner, action)
         return winner
 
-    def batched_expand_and_simulate(self, action, action_history):
-        child, winner = yield ("mcts_expand_and_simulate", action_history)
+    def batched_expand_and_simulate(self, action):
+        task = MCTSExpandAndSimulate(
+            sim=self.env,
+            action_history=[action]
+        )
+        child, winner = yield task
 
         self.children[action] = child
         child.backup(winner)

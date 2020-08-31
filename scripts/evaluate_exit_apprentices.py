@@ -1,3 +1,4 @@
+import silence_tensorflow
 from Agent import RandomAgent
 from anthony_net.NNAgent import NNAgent
 from mcts.MCTSAgent import MCTSAgent
@@ -17,41 +18,56 @@ from nmcts.NeuralSearchNode import NeuralSearchNode
 from mcts.SearchNode import SearchNode
 from multiprocessing import Pool
 import configparser
-from itertools import product
+from copy import deepcopy
 
 
 from scheduler.scheduler import Scheduler, Task, DoneTask, FinalHandler
 from scheduler.handlers import (
     HandleMCTSExpandAndSimulate,
     HandleExpandAndSimulate,
-    HandleUpdateEnv,
-    Handler
+    HandleNNEval,
+    Handler,
+    HandleMetadataUpdate
 )
 from scheduler.tasks import (
-    UpdateEnv,
     MCTSExpandAndSimulate,
-    ExpandAndSimulate
+    ExpandAndSimulate,
+    NNEval,
+    UpdateMetadata
 )
 
 
 def play_match(env, agent, opponent):
     state, info = env.reset()
+    # task = UpdateMetadata()
+    # task.metadata["sim"] = env.simulator
+    # yield task
+
+    info_opponent = {
+            'last_move_opponent': None,
+            'last_move_player': env.previous_opponent_move
+        }
+    yield from opponent.update_root_state_deferred(info_opponent)
 
     done = False
     while not done:
-        action = agent.act(state[0], state[1], None)
+        task = NNEval(env.simulator)
+        action = yield task
+
         info_opponent = {
-            'state': None,
             'last_move_opponent': action,
-            'last_move_player': env.previous_opponent_move
+            'last_move_player': None
         }
-        opponent.update_root_state_deferred(info)
+        yield from opponent.update_root_state_deferred(info_opponent)
         yield from opponent.deferred_plan()
         state, reward, done, info = env.step(action)
 
-        task = UpdateEnv()
-        task.metadata["sim"] = env.simulator
-        yield task
+        if not done:
+            info_opponent = {
+                'last_move_opponent': None,
+                'last_move_player': env.previous_opponent_move
+            }
+            yield from opponent.update_root_state_deferred(info_opponent)
 
     task = DoneTask()
     task.metadata["result"] = reward
@@ -91,10 +107,9 @@ class HandleInit(Handler):
             env = gym.make(
                 "hex-v0",
                 player_color=player_color,
-                opponent_policy=opponent.act,
+                opponent_policy=opponent.act_greedy,
                 board_size=self.board_size)
 
-            task.metadata["sim"] = env.simulator
             task.metadata["opponent"] = opponent
 
             task.gen = play_match(env, task.metadata["agent"], opponent)
@@ -156,15 +171,18 @@ if __name__ == "__main__":
     handlers = [
         HandleInit(config),
         HandleMCTSExpandAndSimulate(),
-        HandleUpdateEnv(),
-        HandleDone(config)
+        HandleDone(config),
+        HandleMetadataUpdate(),
+        HandleNNEval(None)
     ]
     sched = Scheduler(handlers)
 
     agent_bar = tqdm.tqdm(
-        iter(agents)
-        desc="Agents")
+        iter(agents),
+        desc="Agents",
+        total=len(agents))
     for nn_agent in agents:
+        handlers[-1] = HandleNNEval(nn_agent)
         queue = [InitGame(idx, nn_agent)
                  for idx in range(num_matches)]
 

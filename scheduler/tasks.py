@@ -1,6 +1,10 @@
 from scheduler.scheduler import Task
 
 
+class UpdateMetadata(Task):
+    pass
+
+
 class InitExit(Task):
     def __init__(self, sample, idx):
         super(InitExit, self).__init__()
@@ -19,12 +23,13 @@ class ExpandAndSimulate(Task):
 
 
 class MCTSExpandAndSimulate(Task):
-    pass
-
-
-class UpdateEnv(Task):
-    pass
+    def __init__(self, sim, action_history):
+        super(MCTSExpandAndSimulate, self).__init__()
+        self.sim = sim
+        self.action_history = action_history
 
 
 class NNEval(Task):
-    pass
+    def __init__(self, sim):
+        super(NNEval, self).__init__()
+        self.sim = sim

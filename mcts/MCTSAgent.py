@@ -35,6 +35,9 @@ class MCTSAgent(Agent):
         self.root_node = SearchNode(env)
 
     def deferred_plan(self):
+        if self.root_node.is_terminal:
+            return
+
         for _ in range(self.depth):
             yield from self.root_node.add_leaf_deferred()
 
@@ -44,17 +47,16 @@ class MCTSAgent(Agent):
 
         last_move = info["last_move_player"]
         last_opponent_move = info["last_move_opponent"]
-
         if last_move is not None:
             if last_move not in self.root_node.children:
                 gen_fn = self.root_node.batched_expand_and_simulate
-                yield from gen_fn(last_move, list())
+                yield from gen_fn(last_move)
             self.root_node = self.root_node.children[last_move]
 
         if last_opponent_move is not None:
             if last_opponent_move not in self.root_node.children:
                 gen_fn = self.root_node.batched_expand_and_simulate
-                yield from gen_fn(last_opponent_move, list())
+                yield from gen_fn(last_opponent_move)
             self.root_node = self.root_node.children[last_opponent_move]
 
     def act_greedy(self, state, active_player, info):

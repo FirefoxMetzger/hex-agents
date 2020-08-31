@@ -14,8 +14,8 @@ def load_data(data_file, label_file, config, workers=None, max_size=None):
     players = np.load(data_file)['arr_1']
     labels = np.load(label_file)['arr_0']
 
-    chunksize = int(config["GLOBAL"]["chunksize"])
     if workers:
+        chunksize = int(config["GLOBAL"]["chunksize"])
         sim_args = zip(players, boards, players)
         data = [sim for sim in workers.starmap(
             HexGame,

@@ -33,6 +33,11 @@ class RandomAgent(Agent):
 
     def update_root_state_deferred(self, info):
         return
+        yield
+
+    def deferred_plan(self):
+        return
+        yield
 
     def reset(self, env):
         return

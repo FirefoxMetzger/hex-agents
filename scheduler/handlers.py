@@ -7,6 +7,7 @@ from scheduler.scheduler import Task, Handler, DoneTask, FinalHandler
 from .tasks import *
 from nmcts.NMCTSAgent import NMCTSAgent
 from anthony_net.utils import convert_state_batch
+from mcts.SearchNode import SearchNode
 
 
 class HandleInit(Handler):
@@ -47,6 +48,13 @@ class HandleInit(Handler):
 
             task.gen = agent.deferred_plan()
 
+        return [None] * len(batch)
+
+
+class HandleMetadataUpdate(Handler):
+    allowed_task = UpdateMetadata
+
+    def handle_batch(self, batch):
         return [None] * len(batch)
 
 
@@ -107,8 +115,8 @@ class HandleMCTSExpandAndSimulate(Handler):
     def handle_batch(self, batch):
         results = list()
         for task in batch:
-            sim = task.metadata["sim"]
-            hist = task.metadata["action_history"]
+            sim = task.sim
+            hist = task.action_history
             env, winner = step_and_rollout(sim, hist)
             node = SearchNode(env)
             results.append((node, winner))
@@ -116,22 +124,21 @@ class HandleMCTSExpandAndSimulate(Handler):
         return results
 
 
-class HandleUpdateEnv(Handler):
-    allowed_task = UpdateEnv
-
-    def handle_batch(self, batch):
-        return [None] * len(batch)
-
-
 class HandleNNEval(Handler):
     allowed_task = NNEval
 
+    def __init__(self, nn_agent):
+        self.nn_agent = nn_agent
+
     def handle_batch(self, batch):
-        sims = list()
-        players = list()
-        for task in batch:
-            sim = task.metadata["sim"]
-            sims.append(sim)
-            players.append(sim.active_player)
-        players = np.stack(players)
+        players = np.stack([task.sim.active_player for task in batch])
+        sims = [task.sim for task in batch]
         boards = np.stack(convert_state_batch(sims))
+        possible_actions = [task.sim.get_possible_actions() for task in batch]
+        scores = self.nn_agent.get_scores(boards, players)
+
+        actions = list()
+        for score, possible in zip(scores, possible_actions):
+            action_idx = np.argmax(score[possible])
+            actions.append(possible[action_idx])
+        return actions
