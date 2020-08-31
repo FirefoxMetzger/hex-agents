@@ -3,14 +3,14 @@ import numpy as np
 
 from utils import step_and_rollout
 from nmcts.NeuralSearchNode import NeuralSearchNode
-from scheduler.scheduler import Task, Handler, InitTask, DoneTask, FinalHandler
-from .tasks import ExpandAndSimulate
+from scheduler.scheduler import Task, Handler, DoneTask, FinalHandler
+from .tasks import *
 from nmcts.NMCTSAgent import NMCTSAgent
 from anthony_net.utils import convert_state_batch
 
 
 class HandleInit(Handler):
-    allowed_task = InitTask
+    allowed_task = InitExit
 
     def __init__(self, nn_agent, config, workers):
         self.nn_agent = nn_agent
@@ -99,3 +99,39 @@ class HandleDone(FinalHandler):
                 self.labels[idx] = (-1, action)
             else:
                 self.labels[idx] = (action, -1)
+
+
+class HandleMCTSExpandAndSimulate(Handler):
+    allowed_task = MCTSExpandAndSimulate
+
+    def handle_batch(self, batch):
+        results = list()
+        for task in batch:
+            sim = task.metadata["sim"]
+            hist = task.metadata["action_history"]
+            env, winner = step_and_rollout(sim, hist)
+            node = SearchNode(env)
+            results.append((node, winner))
+
+        return results
+
+
+class HandleUpdateEnv(Handler):
+    allowed_task = UpdateEnv
+
+    def handle_batch(self, batch):
+        return [None] * len(batch)
+
+
+class HandleNNEval(Handler):
+    allowed_task = NNEval
+
+    def handle_batch(self, batch):
+        sims = list()
+        players = list()
+        for task in batch:
+            sim = task.metadata["sim"]
+            sims.append(sim)
+            players.append(sim.active_player)
+        players = np.stack(players)
+        boards = np.stack(convert_state_batch(sims))
