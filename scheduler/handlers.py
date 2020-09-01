@@ -61,7 +61,7 @@ class HandleMetadataUpdate(Handler):
 class HandleExpandAndSimulate(Handler):
     allowed_task = ExpandAndSimulate
 
-    def __init__(self, nn_agent, workers):
+    def __init__(self, nn_agent, workers=None):
         self.workers = workers
         self.nn_agent = nn_agent
 
@@ -69,7 +69,7 @@ class HandleExpandAndSimulate(Handler):
         envs = list()
         rollout_results = list()
         for task in batch:
-            sim = task.metadata["sim"]
+            sim = task.sim
             hist = task.metadata["action_history"]
             env, result = step_and_rollout(sim, hist)
             envs.append(env)

@@ -21,8 +21,14 @@ class NMCTSAgent(MCTSAgent):
         self.root_node = NeuralSearchNode(env, **kwargs)
         self.depth = depth
         self.agent = self.root_node.network_agent
+        self.board_size = board_size
+        self.active_player = active_player
+        self.player = player
 
-    def reset(self, env):
+    def reset(self, env=None):
+        if env is None:
+            board = player.EMPTY * np.ones((self.board_size, self.board_size))
+            env = HexGame(self.active_player, board, self.player)
         self.root_node = NeuralSearchNode(env, agent=self.agent)
 
     def __str__(self):

@@ -40,8 +40,11 @@ class NeuralSearchNode(SearchNode):
         self.Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
         self.greedy_Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
 
-    def batched_expand_and_simulate(self, action, action_history):
-        task = ExpandAndSimulate(action_history=action_history)
+    def batched_expand_and_simulate(self, action):
+        task = ExpandAndSimulate(
+            sim=self.env,
+            action_history=[action]
+        )
         child, winner = yield task
 
         self.children[action] = child

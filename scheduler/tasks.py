@@ -15,8 +15,9 @@ class InitExit(Task):
 
 
 class ExpandAndSimulate(Task):
-    def __init__(self, action_history):
+    def __init__(self, sim, action_history):
         super(ExpandAndSimulate, self).__init__()
+        self.sim = sim
         self.metadata = {
             "action_history": action_history
         }
