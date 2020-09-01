@@ -181,7 +181,7 @@ if __name__ == "__main__":
         iter(agents),
         desc="Agents",
         total=len(agents))
-    for nn_agent in agents:
+    for nn_agent in agent_bar:
         handlers[-1] = HandleNNEval(nn_agent)
         queue = [InitGame(idx, nn_agent)
                  for idx in range(num_matches)]
@@ -192,7 +192,8 @@ if __name__ == "__main__":
         queue_bar = tqdm.tqdm(
             total=num_matches,
             desc="Games Played",
-            leave=False)
+            leave=False,
+            position=1)
         while queue or active_tasks:
             if len(active_tasks) < max_active:
                 num_new = max_active - len(active_tasks)
@@ -200,9 +201,11 @@ if __name__ == "__main__":
                 new_tasks = queue[:num_new]
                 active_tasks += new_tasks
                 queue = queue[num_new:]
-                queue_bar.update(num_new)
 
+            old_count = len(active_tasks)
             active_tasks = sched.process(active_tasks)
+            completed = old_count - len(active_tasks)
+            queue_bar.update(completed)
 
     ratings = {
         model: {"mu": agent.rating.mu,
