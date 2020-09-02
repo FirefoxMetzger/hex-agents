@@ -14,20 +14,18 @@ import json
 from nmcts.NeuralSearchNode import NeuralSearchNode
 from mcts.SearchNode import SearchNode
 import configparser
+from multiprocessing import Pool
 
 from scheduler.scheduler import Scheduler, Task, DoneTask, FinalHandler
 from scheduler.handlers import (
     HandleMCTSExpandAndSimulate,
     HandleExpandAndSimulate,
-    HandleNNEval,
-    Handler,
-    HandleMetadataUpdate
+    Handler
 )
 from scheduler.tasks import (
     MCTSExpandAndSimulate,
     ExpandAndSimulate,
-    NNEval,
-    UpdateMetadata
+    NNEval
 )
 
 
@@ -178,54 +176,58 @@ if __name__ == "__main__":
     num_matches = int(config["expertEval"]["num_matches"])
     rating_agents = {depth: Agent() for depth in depths}
 
-    handlers = [
-        HandleInit(config),
-        HandleMCTSExpandAndSimulate(),
-        HandleExpandAndSimulate(nn_agent),
-        HandleDone(rating_agents, config),
-        HandleMetadataUpdate(),
-        HandleNNEval(None)
-    ]
-    sched = Scheduler(handlers)
+    num_threads = int(config["GLOBAL"]["num_threads"])
+    with Pool(num_threads) as workers:
+        handlers = [
+            HandleInit(config),
+            HandleMCTSExpandAndSimulate(workers, config),
+            HandleExpandAndSimulate(
+                nn_agent=nn_agent,
+                workers=workers,
+                config=config
+            ),
+            HandleDone(rating_agents, config)
+        ]
+        sched = Scheduler(handlers)
 
-    agent_bar = tqdm.tqdm(
-        iter(depths),
-        desc="Agents",
-        total=len(depths))
-    for depth in agent_bar:
-        queue = list()
-        for idx in range(num_matches):
-            queue.append(
-                InitGame(
-                    idx,
-                    NMCTSAgent(
-                        depth=depth,
-                        board_size=board_size,
-                        agent=nn_agent
+        agent_bar = tqdm.tqdm(
+            iter(depths),
+            desc="Agents",
+            total=len(depths))
+        for depth in agent_bar:
+            queue = list()
+            for idx in range(num_matches):
+                queue.append(
+                    InitGame(
+                        idx,
+                        NMCTSAgent(
+                            depth=depth,
+                            board_size=board_size,
+                            agent=nn_agent
+                        )
                     )
                 )
-            )
 
-        max_active = int(config["expertEval"]["active_simulations"])
-        active_tasks = queue[:max_active]
-        queue = queue[max_active:]
-        queue_bar = tqdm.tqdm(
-            total=num_matches,
-            desc="Games Played",
-            leave=False,
-            position=1)
-        while queue or active_tasks:
-            if len(active_tasks) < max_active:
-                num_new = max_active - len(active_tasks)
-                num_new = min(num_new, len(queue))
-                new_tasks = queue[:num_new]
-                active_tasks += new_tasks
-                queue = queue[num_new:]
+            max_active = int(config["expertEval"]["active_simulations"])
+            active_tasks = queue[:max_active]
+            queue = queue[max_active:]
+            queue_bar = tqdm.tqdm(
+                total=num_matches,
+                desc="Games Played",
+                leave=False,
+                position=1)
+            while queue or active_tasks:
+                if len(active_tasks) < max_active:
+                    num_new = max_active - len(active_tasks)
+                    num_new = min(num_new, len(queue))
+                    new_tasks = queue[:num_new]
+                    active_tasks += new_tasks
+                    queue = queue[num_new:]
 
-            old_count = len(active_tasks)
-            active_tasks = sched.process(active_tasks)
-            completed = old_count - len(active_tasks)
-            queue_bar.update(completed)
+                old_count = len(active_tasks)
+                active_tasks = sched.process(active_tasks)
+                completed = old_count - len(active_tasks)
+                queue_bar.update(completed)
 
     ratings = {
         "mu": [rating_agents[depth].rating.mu for depth in depths],

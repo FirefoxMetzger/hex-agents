@@ -51,42 +51,31 @@ class HandleInit(Handler):
         return [None] * len(batch)
 
 
-class HandleMetadataUpdate(Handler):
-    allowed_task = UpdateMetadata
-
-    def handle_batch(self, batch):
-        return [None] * len(batch)
-
-
 class HandleExpandAndSimulate(Handler):
     allowed_task = ExpandAndSimulate
 
-    def __init__(self, nn_agent, workers=None):
+    def __init__(self, nn_agent, workers, config):
         self.workers = workers
         self.nn_agent = nn_agent
+        self.chunksize = int(config["GLOBAL"]["chunksize"])
 
     def handle_batch(self, batch):
-        envs = list()
-        rollout_results = list()
-        for task in batch:
-            sim = task.sim
-            hist = task.metadata["action_history"]
-            env, result = step_and_rollout(sim, hist)
-            envs.append(env)
-            rollout_results.append(result)
+        sims = [task.sim for task in batch]
+        histories = [task.metadata["action_history"] for task in batch]
+        results = self.workers.starmap(
+            step_and_rollout,
+            zip(sims, histories),
+            chunksize=self.chunksize)
+        envs = [env for env, _ in results]
+        winners = [winner for _, winner in results]
 
         players = np.stack([env.active_player for env in envs], axis=0)
-        boards = np.stack(convert_state_batch(envs))
+        boards = convert_state_batch(envs)
         policies = self.nn_agent.get_scores(boards, players)
+        nodes = [NeuralSearchNode(env, network_policy=policy)
+                 for env, policy in zip(envs, policies)]
 
-        results = list()
-        for idx, task in enumerate(batch):
-            winner = rollout_results[idx]
-            policy = policies[idx]
-            env = envs[idx]
-            node = NeuralSearchNode(env, network_policy=policy)
-            results.append((node, winner))
-
+        results = [(node, winner) for node, winner in zip(nodes, winners)]
         return results
 
 
@@ -112,15 +101,18 @@ class HandleDone(FinalHandler):
 class HandleMCTSExpandAndSimulate(Handler):
     allowed_task = MCTSExpandAndSimulate
 
-    def handle_batch(self, batch):
-        results = list()
-        for task in batch:
-            sim = task.sim
-            hist = task.action_history
-            env, winner = step_and_rollout(sim, hist)
-            node = SearchNode(env)
-            results.append((node, winner))
+    def __init__(self, workers, config):
+        self.workers = workers
+        self.chunksize = int(config["GLOBAL"]["chunksize"])
 
+    def handle_batch(self, batch):
+        sims = [task.sim for task in batch]
+        histories = [task.action_history for task in batch]
+        results = self.workers.starmap(
+            step_and_rollout,
+            zip(sims, histories),
+            chunksize=self.chunksize)
+        results = [(SearchNode(env), winner) for env, winner in results]
         return results
 
 

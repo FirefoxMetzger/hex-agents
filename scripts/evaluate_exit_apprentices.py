@@ -27,21 +27,16 @@ from scheduler.handlers import (
     HandleExpandAndSimulate,
     HandleNNEval,
     Handler,
-    HandleMetadataUpdate
 )
 from scheduler.tasks import (
     MCTSExpandAndSimulate,
     ExpandAndSimulate,
-    NNEval,
-    UpdateMetadata
+    NNEval
 )
 
 
 def play_match(env, agent, opponent):
     state, info = env.reset()
-    # task = UpdateMetadata()
-    # task.metadata["sim"] = env.simulator
-    # yield task
 
     info_opponent = {
             'last_move_opponent': None,
@@ -167,44 +162,44 @@ if __name__ == "__main__":
 
     num_matches = int(config["expertEval"]["num_matches"])
 
-    handlers = [
-        HandleInit(config),
-        HandleMCTSExpandAndSimulate(),
-        HandleDone(config),
-        HandleMetadataUpdate(),
-        HandleNNEval(None)
-    ]
-    sched = Scheduler(handlers)
+    with Pool(num_threads) as workers:
+        handlers = [
+            HandleInit(config),
+            HandleMCTSExpandAndSimulate(workers, config),
+            HandleDone(config),
+            HandleNNEval(None)
+        ]
+        sched = Scheduler(handlers)
 
-    agent_bar = tqdm.tqdm(
-        iter(agents),
-        desc="Agents",
-        total=len(agents))
-    for nn_agent in agent_bar:
-        handlers[-1] = HandleNNEval(nn_agent)
-        queue = [InitGame(idx, nn_agent)
-                 for idx in range(num_matches)]
+        agent_bar = tqdm.tqdm(
+            iter(agents),
+            desc="Agents",
+            total=len(agents))
+        for nn_agent in agent_bar:
+            handlers[-1] = HandleNNEval(nn_agent)
+            queue = [InitGame(idx, nn_agent)
+                     for idx in range(num_matches)]
 
-        max_active = int(config["apprenticeEval"]["active_simulations"])
-        active_tasks = queue[:max_active]
-        queue = queue[max_active:]
-        queue_bar = tqdm.tqdm(
-            total=num_matches,
-            desc="Games Played",
-            leave=False,
-            position=1)
-        while queue or active_tasks:
-            if len(active_tasks) < max_active:
-                num_new = max_active - len(active_tasks)
-                num_new = min(num_new, len(queue))
-                new_tasks = queue[:num_new]
-                active_tasks += new_tasks
-                queue = queue[num_new:]
+            max_active = int(config["apprenticeEval"]["active_simulations"])
+            active_tasks = queue[:max_active]
+            queue = queue[max_active:]
+            queue_bar = tqdm.tqdm(
+                total=num_matches,
+                desc="Games Played",
+                leave=False,
+                position=1)
+            while queue or active_tasks:
+                if len(active_tasks) < max_active:
+                    num_new = max_active - len(active_tasks)
+                    num_new = min(num_new, len(queue))
+                    new_tasks = queue[:num_new]
+                    active_tasks += new_tasks
+                    queue = queue[num_new:]
 
-            old_count = len(active_tasks)
-            active_tasks = sched.process(active_tasks)
-            completed = old_count - len(active_tasks)
-            queue_bar.update(completed)
+                old_count = len(active_tasks)
+                active_tasks = sched.process(active_tasks)
+                completed = old_count - len(active_tasks)
+                queue_bar.update(completed)
 
     ratings = {
         "mu": [agent.rating.mu for agent in agents],

@@ -1,10 +1,6 @@
 from scheduler.scheduler import Task
 
 
-class UpdateMetadata(Task):
-    pass
-
-
 class InitExit(Task):
     def __init__(self, sample, idx):
         super(InitExit, self).__init__()

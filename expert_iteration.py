@@ -54,7 +54,7 @@ def build_apprentice(samples, labels, config, workers):
 def generate_samples(config, workers):
     # the paper generates a rollout via selfplay and then samples a single
     # position from the entire trajectory to avoid correlations in the data
-    # Here we improve this, by directly sampling a game position randomly
+    # Here we "improve" this, by directly sampling a game position randomly
     # (0 correlation with other states in the dataset)
 
     num_samples = int(config["ExpertIteration"]["dataset_size"])
@@ -112,9 +112,11 @@ def compute_labels(samples, expert, config, workers):
             new_tasks = queue[:num_new]
             active_tasks += new_tasks
             queue = queue[num_new:]
-            pbar.update(num_new)
 
+        old_count = len(active_tasks)
         active_tasks = sched.process(active_tasks)
+        completed = old_count - len(active_tasks)
+        pbar.update(completed)
 
     labels = handlers[-1].labels
     return np.stack(labels, axis=0)
@@ -132,7 +134,7 @@ if __name__ == "__main__":
     expert = NMCTSAgent(
         board_size=board_size,
         depth=depth,
-        model_file="best_model.h5")
+        model_file=config["Training"]["model_file"])
     with Pool(num_threads) as workers:
         pbar = tqdm.tqdm(range(iterations),
                          desc="Training Experts",
