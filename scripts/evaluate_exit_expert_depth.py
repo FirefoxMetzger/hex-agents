@@ -159,11 +159,12 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('ExIt.ini')
 
-    trueskill.setup(mu=1200,
-                    sigma=200.0,
-                    beta=100.0,
-                    tau=2.0,
-                    draw_probability=0.01,
+    trueskill.setup(mu=float(config["TrueSkill"]["initial_mu"]),
+                    sigma=float(config["TrueSkill"]["initial_sigma"]),
+                    beta=float(config["TrueSkill"]["beta"]),
+                    tau=float(config["TrueSkill"]["tau"]),
+                    draw_probability=float(
+                        config["TrueSkill"]["draw_probability"]),
                     backend="scipy")
 
     num_threads = int(config["GLOBAL"]["num_threads"])
@@ -231,10 +232,10 @@ if __name__ == "__main__":
 
     ratings = {
         "mu": [rating_agents[depth].rating.mu for depth in depths],
-        "sigma": [rating_agents[depth].rating.sigma for agent in depths],
+        "sigma": [rating_agents[depth].rating.sigma for depth in depths],
         "depth": [depth for depth in depths]
     }
 
-    eval_file = config["expertEval"]["eval_file"]
+    eval_file = config["expertEval"]["depth_eval_file"]
     with open(eval_file.format(board_size=board_size), "w") as json_file:
         json.dump(ratings, json_file)

@@ -1,32 +1,26 @@
 import silence_tensorflow
-from Agent import RandomAgent
+from Agent import Agent, RandomAgent
 from anthony_net.NNAgent import NNAgent
 from mcts.MCTSAgent import MCTSAgent
+from nmcts.NMCTSAgent import NMCTSAgent
 import gym
 import minihex
 from minihex import player
-from minihex.HexGame import HexEnv, HexGame
 import numpy as np
 import tqdm
 import random
-from nmcts.NMCTSAgent import NMCTSAgent
 import trueskill
 import json
-from utils import step_and_rollout
-from anthony_net.utils import convert_state_batch
 from nmcts.NeuralSearchNode import NeuralSearchNode
 from mcts.SearchNode import SearchNode
-from multiprocessing import Pool
 import configparser
-from copy import deepcopy
-
+from multiprocessing import Pool
 
 from scheduler.scheduler import Scheduler, Task, DoneTask, FinalHandler
 from scheduler.handlers import (
     HandleMCTSExpandAndSimulate,
     HandleExpandAndSimulate,
-    HandleNNEval,
-    Handler,
+    Handler
 )
 from scheduler.tasks import (
     MCTSExpandAndSimulate,
@@ -44,16 +38,28 @@ def play_match(env, agent, opponent):
     }
     yield from opponent.update_root_state_deferred(info_opponent)
 
+    info = {
+        'last_move_opponent': env.previous_opponent_move,
+        'last_move_player': None
+    }
+    yield from agent.update_root_state_deferred(info)
+
     done = False
     while not done:
-        task = NNEval(env.simulator)
-        action = yield task
+        yield from agent.deferred_plan()
+        action = agent.act_greedy(None, None, None)
 
         info_opponent = {
             'last_move_opponent': action,
             'last_move_player': None
         }
         yield from opponent.update_root_state_deferred(info_opponent)
+        info = {
+            'last_move_opponent': None,
+            'last_move_player': action
+        }
+        yield from agent.update_root_state_deferred(info)
+
         yield from opponent.deferred_plan()
         state, reward, done, info = env.step(action)
 
@@ -63,6 +69,11 @@ def play_match(env, agent, opponent):
                 'last_move_player': env.previous_opponent_move
             }
             yield from opponent.update_root_state_deferred(info_opponent)
+            info = {
+                'last_move_opponent': env.previous_opponent_move,
+                'last_move_player': None
+            }
+            yield from agent.update_root_state_deferred(info)
 
     task = DoneTask()
     task.metadata["result"] = reward
@@ -70,11 +81,11 @@ def play_match(env, agent, opponent):
 
 
 class InitGame(Task):
-    def __init__(self, idx, nn_agent):
+    def __init__(self, idx, agent):
         super(InitGame, self).__init__()
         self.metadata = {
             "idx": idx,
-            "agent": nn_agent
+            "agent": agent
         }
 
 
@@ -115,19 +126,21 @@ class HandleInit(Handler):
 class HandleDone(FinalHandler):
     allowed_task = DoneTask
 
-    def __init__(self, config):
+    def __init__(self, rating_agents, config):
         board_size = int(config["GLOBAL"]["board_size"])
         rating_file = config["mctsEval"]["eval_file"]
         rating_file = rating_file.format(board_size=board_size)
         with open(rating_file, "r") as rating_f:
             mcts_ratings = json.load(rating_f)
         self.mcts_ratings = mcts_ratings
+        self.rating_agents = rating_agents
 
     def handle_batch(self, batch):
         for task in batch:
             result = task.metadata["result"]
             opponent = task.metadata["opponent"]
-            agent = task.metadata["agent"]
+            nn_agent = task.metadata["agent"].agent
+            agent = self.rating_agents[nn_agent]
 
             rating = self.mcts_ratings[str(opponent)]
             op_rating = trueskill.Rating(rating["mu"], rating["sigma"])
@@ -156,32 +169,48 @@ if __name__ == "__main__":
 
     num_threads = int(config["GLOBAL"]["num_threads"])
     iterations = int(config["ExpertIteration"]["iterations"])
+    board_size = int(config["GLOBAL"]["board_size"])
 
     model_files = [
         f"logs/iteration_{idx}/model.h5" for idx in range(iterations)]
-    agents = [NNAgent(model_file) for model_file in model_files]
-
+    nn_agents = [NNAgent(model_file) for model_file in model_files]
+    depth = int(config["NMCTSAgent"]["search_depth"])
     num_matches = int(config["expertEval"]["num_matches"])
+    rating_agents = {nn_agent: Agent() for nn_agent in nn_agents}
 
+    num_threads = int(config["GLOBAL"]["num_threads"])
     with Pool(num_threads) as workers:
-        handlers = [
-            HandleInit(config),
-            HandleMCTSExpandAndSimulate(workers, config),
-            HandleDone(config),
-            HandleNNEval(None)
-        ]
-        sched = Scheduler(handlers)
-
         agent_bar = tqdm.tqdm(
-            iter(agents),
+            iter(nn_agents),
             desc="Agents",
-            total=len(agents))
+            total=len(nn_agents))
         for nn_agent in agent_bar:
-            handlers[-1] = HandleNNEval(nn_agent)
-            queue = [InitGame(idx, nn_agent)
-                     for idx in range(num_matches)]
+            handlers = [
+                HandleInit(config),
+                HandleMCTSExpandAndSimulate(workers, config),
+                HandleExpandAndSimulate(
+                    nn_agent=nn_agent,
+                    workers=workers,
+                    config=config
+                ),
+                HandleDone(rating_agents, config)
+            ]
+            sched = Scheduler(handlers)
 
-            max_active = int(config["apprenticeEval"]["active_simulations"])
+            queue = list()
+            for idx in range(num_matches):
+                queue.append(
+                    InitGame(
+                        idx,
+                        NMCTSAgent(
+                            depth=depth,
+                            board_size=board_size,
+                            agent=nn_agent
+                        )
+                    )
+                )
+
+            max_active = int(config["expertEval"]["active_simulations"])
             active_tasks = queue[:max_active]
             queue = queue[max_active:]
             queue_bar = tqdm.tqdm(
@@ -203,12 +232,12 @@ if __name__ == "__main__":
                 queue_bar.update(completed)
 
     ratings = {
-        "mu": [agent.rating.mu for agent in agents],
-        "sigma": [agent.rating.sigma for agent in agents],
-        "model": [model for model in model_files]
+        "mu": [rating_agents[nn_agent].rating.mu for nn_agent in nn_agents],
+        "sigma": [rating_agents[nn_agent].rating.sigma
+                  for nn_agent in nn_agents],
+        "iteration": [idx for idx in range(len(nn_agents))]
     }
 
-    board_size = int(config["GLOBAL"]["board_size"])
-    eval_file = config["apprenticeEval"]["eval_file"]
+    eval_file = config["expertEval"]["iter_eval_file"]
     with open(eval_file.format(board_size=board_size), "w") as json_file:
         json.dump(ratings, json_file)

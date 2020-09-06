@@ -85,7 +85,8 @@ def compute_labels(samples, expert, config, workers):
     handlers = [
         HandleExpandAndSimulate(
             nn_agent=expert.agent,
-            workers=workers
+            workers=workers,
+            config=config
         ),
         HandleInit(
             nn_agent=expert.agent,
@@ -122,10 +123,7 @@ def compute_labels(samples, expert, config, workers):
     return np.stack(labels, axis=0)
 
 
-if __name__ == "__main__":
-    config = configparser.ConfigParser()
-    config.read('ExIt.ini')
-
+def exIt(workers, config):
     board_size = int(config["GLOBAL"]["board_size"])
     iterations = int(config["ExpertIteration"]["iterations"])
     num_threads = int(config["GLOBAL"]["num_threads"])
@@ -135,19 +133,27 @@ if __name__ == "__main__":
         board_size=board_size,
         depth=depth,
         model_file=config["Training"]["model_file"])
+
+    pbar = tqdm.tqdm(range(iterations),
+                     desc="Training Experts",
+                     position=0)
+    for idx in pbar:
+        os.makedirs(f"logs/iteration_{idx}", exist_ok=True)
+        config["Training"]["model_file"] = f"logs/iteration_{idx}/model.h5"
+        config["Training"]["history_file"] = (
+            f"logs/iteration_{idx}/history.pickle")
+
+        samples = generate_samples(config, workers)
+        labels = compute_labels(samples, expert, config, workers)
+
+        apprentice = build_apprentice(samples, labels, config, workers)
+
+        expert = build_expert(apprentice, config)
+
+
+if __name__ == "__main__":
+    config = configparser.ConfigParser()
+    config.read('ExIt.ini')
+
     with Pool(num_threads) as workers:
-        pbar = tqdm.tqdm(range(iterations),
-                         desc="Training Experts",
-                         position=0)
-        for idx in pbar:
-            os.makedirs(f"logs/iteration_{idx}", exist_ok=True)
-            config["Training"]["model_file"] = f"logs/iteration_{idx}/model.h5"
-            config["Training"]["history_file"] = (
-                f"logs/iteration_{idx}/history.pickle")
-
-            samples = generate_samples(config, workers)
-            labels = compute_labels(samples, expert, config, workers)
-
-            apprentice = build_apprentice(samples, labels, config, workers)
-
-            expert = build_expert(apprentice, config)
+        exIt(workers, config)
