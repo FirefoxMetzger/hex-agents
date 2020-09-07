@@ -126,7 +126,6 @@ def compute_labels(samples, expert, config, workers):
 def exIt(workers, config):
     board_size = int(config["GLOBAL"]["board_size"])
     iterations = int(config["ExpertIteration"]["iterations"])
-    num_threads = int(config["GLOBAL"]["num_threads"])
 
     depth = int(config["NMCTSAgent"]["search_depth"])
     expert = NMCTSAgent(
@@ -155,5 +154,6 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('ExIt.ini')
 
+    num_threads = int(config["GLOBAL"]["num_threads"])
     with Pool(num_threads) as workers:
         exIt(workers, config)
