@@ -1,6 +1,7 @@
 import configparser
 from copy import deepcopy
 import json
+from multiprocessing import Pool
 import numpy as np
 import os
 
@@ -37,29 +38,42 @@ if __name__ == "__main__":
     label_file = config["nnEval"]["label_file"]
     # label_file = "/".join([base_dir, label_file])
     label_file = label_file.format(board_size=board_size)
-    try:
-        data, labels = load_data(data_file, label_file, config)
-    except FileNotFoundError:
-        generate_dataset(config)
-        data, labels = load_data(data_file, label_file, config)
 
-    try:
-        val_data, val_labels = load_data(
-            test_data_file,
-            test_label_file,
-            config
-        )
-    except FileNotFoundError:
-        tmp_config = deepcopy(config)
-        tmp_config["nnEval"]["training_file"] = test_data_file
-        tmp_config["nnEval"]["label_file"] = test_label_file
-        tmp_config["GLOBAL"]["dataset_size"] = str(testset_size)
-        generate_dataset(tmp_config)
-        val_data, val_labels = load_data(
-            test_data_file,
-            test_label_file,
-            config
-        )
+    num_threads = int(config["GLOBAL"]["num_threads"])
+    with Pool(num_threads) as workers:
+        try:
+            data, labels = load_data(
+                data_file=data_file,
+                label_file=label_file,
+                config=config,
+                workers=workers)
+        except FileNotFoundError:
+            generate_dataset(config)
+            data, labels = load_data(
+                data_file=data_file,
+                label_file=label_file,
+                config=config,
+                workers=workers)
+
+        try:
+            val_data, val_labels = load_data(
+                test_data_file,
+                test_label_file,
+                config,
+                workers=workers
+            )
+        except FileNotFoundError:
+            tmp_config = deepcopy(config)
+            tmp_config["nnEval"]["training_file"] = test_data_file
+            tmp_config["nnEval"]["label_file"] = test_label_file
+            tmp_config["GLOBAL"]["dataset_size"] = str(testset_size)
+            generate_dataset(tmp_config)
+            val_data, val_labels = load_data(
+                test_data_file,
+                test_label_file,
+                config,
+                workers=workers
+            )
 
     accuracies = list()
     test_sizes = np.linspace(dataset_size // num_splits,
