@@ -4,8 +4,8 @@ from minihex import player, HexGame
 import minihex
 import tqdm
 from multiprocessing import Pool
-from utils import convert_state
-from utils import generate_board
+from .utils import convert_state
+from .utils import generate_board
 import random
 
 
@@ -28,7 +28,7 @@ def generate_dataset(config):
     players = list()
     labels = list()
 
-    num_samples = int(config["nnEval"]["dataset_size"])
+    num_samples = int(config["GLOBAL"]["dataset_size"])
     num_threads = int(config["GLOBAL"]["num_threads"])
     board_size = int(config["GLOBAL"]["board_size"])
     chunksize = int(config["GLOBAL"]["chunksize"])
@@ -38,16 +38,19 @@ def generate_dataset(config):
             generate_sample,
             [(board_size, config)] * num_samples,
             chunksize=1),
-            total=num_samples))
+            total=num_samples,
+            desc="Generating Samples"))
     for example, active_player, label in return_val:
         dataset.append(example)
         players.append(active_player)
         labels.append(label)
 
     data_file = config["nnEval"]["training_file"]
+    data_file = data_file.format(board_size=board_size)
     np.savez(data_file, np.stack(dataset, axis=0), np.stack(players, axis=0))
 
     label_file = config["nnEval"]["label_file"]
+    label_file = label_file.format(board_size=board_size)
     np.savez(label_file, np.stack(labels, axis=0))
 
 

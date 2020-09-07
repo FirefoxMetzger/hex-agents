@@ -23,12 +23,6 @@ def simulate(env, board_size=5):
     return env.simulator.winner
 
 
-def nmcts_builder(args):
-    depth, env, initial_policy = args
-    return NMCTSAgent(depth=depth, env=env,
-                      network_policy=initial_policy)
-
-
 def step_and_rollout(env, action_history):
     new_env = deepcopy(env)
     for action in action_history:
@@ -63,8 +57,3 @@ def save_array(filename):
     def decorator(func):
         return _save_array(func, filename)
     return decorator
-
-
-def task_iter(queue):
-    while queue:
-        yield queue.popleft()
