@@ -13,7 +13,12 @@ import configparser
 from utils import save_array
 import os
 from scheduler.scheduler import Scheduler
-from scheduler.handlers import HandleExpandAndSimulate, HandleInit, HandleDone
+from scheduler.handlers import (
+    HandleInit,
+    HandleDone,
+    HandleNNPolicy,
+    HandleRollout
+)
 from scheduler.tasks import InitExit
 
 
@@ -83,8 +88,8 @@ def generate_samples(config, workers):
 def compute_labels(samples, expert, config, workers):
     dataset_size = int(config["ExpertIteration"]["dataset_size"])
     handlers = [
-        HandleExpandAndSimulate(
-            nn_agent=expert.agent,
+        HandleNNPolicy(nn_agent=expert.agent),
+        HandleRollout(
             workers=workers,
             config=config
         ),

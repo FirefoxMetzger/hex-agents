@@ -10,23 +10,14 @@ class InitExit(Task):
         }
 
 
-class ExpandAndSimulate(Task):
-    def __init__(self, sim, action_history):
-        super(ExpandAndSimulate, self).__init__()
-        self.sim = sim
-        self.metadata = {
-            "action_history": action_history
-        }
-
-
-class MCTSExpandAndSimulate(Task):
-    def __init__(self, sim, action_history):
-        super(MCTSExpandAndSimulate, self).__init__()
-        self.sim = sim
-        self.action_history = action_history
-
-
 class NNEval(Task):
     def __init__(self, sim):
         super(NNEval, self).__init__()
         self.sim = sim
+
+
+class Rollout(Task):
+    def __init__(self, sim, action_history):
+        super(Rollout, self).__init__()
+        self.sim = sim
+        self.action_history = action_history

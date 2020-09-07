@@ -51,34 +51,6 @@ class HandleInit(Handler):
         return [None] * len(batch)
 
 
-class HandleExpandAndSimulate(Handler):
-    allowed_task = ExpandAndSimulate
-
-    def __init__(self, nn_agent, workers, config):
-        self.workers = workers
-        self.nn_agent = nn_agent
-        self.chunksize = int(config["GLOBAL"]["chunksize"])
-
-    def handle_batch(self, batch):
-        sims = [task.sim for task in batch]
-        histories = [task.metadata["action_history"] for task in batch]
-        results = self.workers.starmap(
-            step_and_rollout,
-            zip(sims, histories),
-            chunksize=self.chunksize)
-        envs = [env for env, _ in results]
-        winners = [winner for _, winner in results]
-
-        players = np.stack([env.active_player for env in envs], axis=0)
-        boards = convert_state_batch(envs)
-        policies = self.nn_agent.get_scores(boards, players)
-        nodes = [NeuralSearchNode(env, network_policy=policy)
-                 for env, policy in zip(envs, policies)]
-
-        results = [(node, winner) for node, winner in zip(nodes, winners)]
-        return results
-
-
 class HandleDone(FinalHandler):
     allowed_task = DoneTask
 
@@ -98,8 +70,8 @@ class HandleDone(FinalHandler):
                 self.labels[idx] = (action, -1)
 
 
-class HandleMCTSExpandAndSimulate(Handler):
-    allowed_task = MCTSExpandAndSimulate
+class HandleRollout(Handler):
+    allowed_task = Rollout
 
     def __init__(self, workers, config):
         self.workers = workers
@@ -112,8 +84,22 @@ class HandleMCTSExpandAndSimulate(Handler):
             step_and_rollout,
             zip(sims, histories),
             chunksize=self.chunksize)
-        results = [(SearchNode(env), winner) for env, winner in results]
+        results = [(env, winner) for env, winner in results]
         return results
+
+
+class HandleNNPolicy(Handler):
+    allowed_task = NNEval
+
+    def __init__(self, nn_agent):
+        self.nn_agent = nn_agent
+
+    def handle_batch(self, batch):
+        players = np.stack([task.sim.active_player for task in batch])
+        sims = [task.sim for task in batch]
+        boards = np.stack(convert_state_batch(sims))
+        scores = self.nn_agent.get_scores(boards, players)
+        return scores
 
 
 class HandleNNEval(Handler):

@@ -7,7 +7,7 @@ from copy import deepcopy
 from Agent import RandomAgent
 import random
 
-from scheduler.tasks import MCTSExpandAndSimulate
+from scheduler.tasks import Rollout
 
 VALUE_CONSTANT = np.sqrt(2)
 
@@ -28,8 +28,10 @@ class SearchNode(object):
         board_size = env.board.shape[1]
         self.greedy_Q = np.inf * np.ones(board_size ** 2,
                                          dtype=np.float32)
+        self.greedy_Q = self.greedy_Q.tolist()
         self.Q = np.inf * np.ones(board_size ** 2,
                                   dtype=np.float32)
+        self.Q = self.Q.tolist()
         self.agent = RandomAgent(board_size=board_size)
 
     def add_leaf(self):
@@ -129,12 +131,13 @@ class SearchNode(object):
         return winner
 
     def batched_expand_and_simulate(self, action):
-        task = MCTSExpandAndSimulate(
+        task = Rollout(
             sim=self.env,
             action_history=[action]
         )
-        child, winner = yield task
+        new_env, winner = yield task
 
+        child = SearchNode(new_env)
         self.children[action] = child
         child.backup(winner)
 

@@ -1,8 +1,6 @@
 import silence_tensorflow
-from Agent import Agent, RandomAgent
-from anthony_net.NNAgent import NNAgent
+from Agent import Agent
 from mcts.MCTSAgent import MCTSAgent
-from nmcts.NMCTSAgent import NMCTSAgent
 import gym
 import minihex
 from minihex import player
@@ -11,14 +9,13 @@ import tqdm
 import random
 import trueskill
 import json
-from nmcts.NeuralSearchNode import NeuralSearchNode
-from mcts.SearchNode import SearchNode
 import configparser
 from multiprocessing import Pool
+import os
 
 from scheduler.scheduler import Scheduler, Task, DoneTask, FinalHandler
 from scheduler.handlers import (
-    HandleMCTSExpandAndSimulate,
+    HandleRollout,
     Handler
 )
 
@@ -99,10 +96,7 @@ class HandleInit(Handler):
                 player_color = player.WHITE
 
             depth = self.depths[random.randint(0, len(self.depths) - 1)]
-            if depth == 0:
-                opponent = RandomAgent(self.board_size)
-            else:
-                opponent = MCTSAgent(depth=depth, board_size=self.board_size)
+            opponent = MCTSAgent(depth=depth, board_size=self.board_size)
 
             env = gym.make(
                 "hex-v0",
@@ -146,6 +140,17 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('ExIt.ini')
 
+    board_size = int(config["GLOBAL"]["board_size"])
+    num_threads = int(config["GLOBAL"]["num_threads"])
+    num_matches = int(config["GLOBAL"]["num_matches"])
+    max_active = int(config["GLOBAL"]["active_simulations"])
+
+    log_dir = config["GLOBAL"]["log_dir"]
+    out_dir = config["mctsEval"]["dir"]
+    base_dir = "/".join([log_dir, out_dir])
+    base_dir = base_dir.format(board_size=board_size)
+    os.makedirs(base_dir, exist_ok=True)
+
     trueskill.setup(mu=float(config["TrueSkill"]["initial_mu"]),
                     sigma=float(config["TrueSkill"]["initial_sigma"]),
                     beta=float(config["TrueSkill"]["beta"]),
@@ -154,20 +159,15 @@ if __name__ == "__main__":
                         config["TrueSkill"]["draw_probability"]),
                     backend="scipy")
 
-    num_threads = int(config["GLOBAL"]["num_threads"])
-    iterations = int(config["ExpertIteration"]["iterations"])
-    board_size = int(config["GLOBAL"]["board_size"])
-
     depths = [0, 50, 100, 500, 1000, 1500, 2000,
               2500, 3000, 3500, 4000, 4500, 5000]
-    num_matches = int(config["expertEval"]["num_matches"])
     rating_agents = {depth: Agent() for depth in depths}
 
     num_threads = int(config["GLOBAL"]["num_threads"])
     with Pool(num_threads) as workers:
         handlers = [
             HandleInit(config),
-            HandleMCTSExpandAndSimulate(workers, config),
+            HandleRollout(workers, config),
             HandleDone(rating_agents, config)
         ]
         sched = Scheduler(handlers)
@@ -188,7 +188,6 @@ if __name__ == "__main__":
                 for idx in range(num_matches)
             ]
 
-            max_active = int(config["expertEval"]["active_simulations"])
             active_tasks = queue[:max_active]
             queue = queue[max_active:]
             queue_bar = tqdm.tqdm(
@@ -216,5 +215,6 @@ if __name__ == "__main__":
     }
 
     eval_file = config["mctsEval"]["eval_file"]
-    with open(eval_file.format(board_size=board_size), "w") as json_file:
+    eval_file = "/".join([base_dir, eval_file])
+    with open(eval_file, "w") as json_file:
         json.dump(ratings, json_file)
