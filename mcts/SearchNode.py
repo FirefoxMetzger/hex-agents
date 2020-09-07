@@ -28,10 +28,10 @@ class SearchNode(object):
         board_size = env.board.shape[1]
         self.greedy_Q = np.inf * np.ones(board_size ** 2,
                                          dtype=np.float32)
-        self.greedy_Q = self.greedy_Q.tolist()
+        # self.greedy_Q = self.greedy_Q.tolist()
         self.Q = np.inf * np.ones(board_size ** 2,
                                   dtype=np.float32)
-        self.Q = self.Q.tolist()
+        # self.Q = self.Q.tolist()
         self.agent = RandomAgent(board_size=board_size)
 
     def add_leaf(self):
