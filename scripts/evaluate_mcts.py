@@ -175,9 +175,11 @@ if __name__ == "__main__":
         agent_bar = tqdm.tqdm(
             iter(depths),
             desc="Agents",
-            total=len(depths))
+            total=len(depths),
+            leave=False)
+        queue = list()
         for depth in agent_bar:
-            queue = [
+            queue += [
                 InitGame(
                     idx,
                     MCTSAgent(
@@ -188,25 +190,23 @@ if __name__ == "__main__":
                 for idx in range(num_matches)
             ]
 
-            active_tasks = queue[:max_active]
-            queue = queue[max_active:]
-            queue_bar = tqdm.tqdm(
-                total=num_matches,
-                desc="Games Played",
-                leave=False,
-                position=1)
-            while queue or active_tasks:
-                if len(active_tasks) < max_active:
-                    num_new = max_active - len(active_tasks)
-                    num_new = min(num_new, len(queue))
-                    new_tasks = queue[:num_new]
-                    active_tasks += new_tasks
-                    queue = queue[num_new:]
+        active_tasks = queue[:max_active]
+        queue = queue[max_active:]
+        queue_bar = tqdm.tqdm(
+            total=num_matches*len(depths),
+            desc="Games Played")
+        while queue or active_tasks:
+            if len(active_tasks) < max_active:
+                num_new = max_active - len(active_tasks)
+                num_new = min(num_new, len(queue))
+                new_tasks = queue[:num_new]
+                active_tasks += new_tasks
+                queue = queue[num_new:]
 
-                old_count = len(active_tasks)
-                active_tasks = sched.process(active_tasks)
-                completed = old_count - len(active_tasks)
-                queue_bar.update(completed)
+            old_count = len(active_tasks)
+            active_tasks = sched.process(active_tasks)
+            completed = old_count - len(active_tasks)
+            queue_bar.update(completed)
 
     ratings = {
         "mu": [rating_agents[key].rating.mu for key in rating_agents],
