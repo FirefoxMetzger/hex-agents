@@ -149,21 +149,31 @@ def exIt(workers, config):
     for idx in pbar:
         directory = "/".join([base_dir, step_location])
         directory = directory.format(idx=idx)
-        os.makedirs(directory, exist_ok=True)
-        config["Training"]["model_file"] = "/".join([directory, "model.h5"])
-        config["Training"]["history_file"] = (
-            "/".join([directory, "history.pickle"]))
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
 
-        samples = generate_samples(config, workers)
-        labels = compute_labels(samples, expert, config, workers)
+            config["Training"]["model_file"] = "/".join(
+                [directory, "model.h5"])
+            config["Training"]["history_file"] = (
+                "/".join([directory, "history.pickle"]))
 
-        data_file = "/".join([directory, "data.npz"])
-        np.savez(data_file, *samples)
+            samples = generate_samples(config, workers)
+            labels = compute_labels(samples, expert, config, workers)
 
-        label_file = "/".join([directory, "labels.npz"])
-        np.savez(label_file, labels)
+            data_file = "/".join([directory, "data.npz"])
+            np.savez(data_file, *samples)
 
-        apprentice = build_apprentice(samples, labels, config, workers)
+            label_file = "/".join([directory, "labels.npz"])
+            np.savez(label_file, labels)
+
+            apprentice = build_apprentice(samples, labels, config, workers)
+
+        else:
+            # directory exists
+            model_file = "/".join([directory, "model.h5"])
+
+            tf.keras.backend.clear_session()
+            apprentice = NNAgent(model_file)
 
         expert = build_expert(apprentice, config)
 
