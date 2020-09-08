@@ -18,9 +18,10 @@ class NeuralSearchNode(SearchNode):
         else:
             self.network_agent = agent
 
-        if network_policy is None:
+        self.network_policy = None
+        if model_file is not None:
             self.network_policy = self.network_agent.predict_env(env)
-        else:
+        if network_policy is not None:
             self.network_policy = network_policy
 
     def expand(self, action):
@@ -40,6 +41,12 @@ class NeuralSearchNode(SearchNode):
         self.Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
         self.greedy_Q[action] += WEIGHT_a * predicted_q / (child_sims + 1)
 
+    def update_action_value_deferred(self, action):
+        if self.network_policy is None:
+            self.network_policy = yield NNEval(sim=self.env)
+
+        self.update_action_value(action)
+
     def batched_expand_and_simulate(self, action):
         task = Rollout(
             sim=self.env,
@@ -47,12 +54,7 @@ class NeuralSearchNode(SearchNode):
         )
         new_env, winner = yield task
 
-        policy = yield NNEval(sim=self.env)
-
-        child = NeuralSearchNode(
-            new_env,
-            network_policy=policy
-        )
+        child = NeuralSearchNode(new_env)
         self.children[action] = child
         child.backup(winner)
 

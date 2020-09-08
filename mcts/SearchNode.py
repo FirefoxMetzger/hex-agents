@@ -100,6 +100,18 @@ class SearchNode(object):
         if action is not None:
             self.update_action_value(action)
 
+    def backup_deferred(self, winner, action=None):
+        self.total_simulations += 1
+        if self.active_player == winner:
+            self.total_wins += 1
+
+        if action is not None:
+            yield from self.update_action_value_deferred(action)
+
+    def update_action_value_deferred(self, action):
+        return self.update_action_value(action)
+        yield
+
     def update_action_value(self, action):
         child = self.children[action]
 
@@ -115,7 +127,7 @@ class SearchNode(object):
     def add_leaf_deferred(self):
         if self.is_terminal:
             winner = self.winner
-            self.backup(winner)
+            yield from self.backup_deferred(winner)
             return winner
 
         action = self.select()
@@ -127,7 +139,7 @@ class SearchNode(object):
             gen = self.batched_expand_and_simulate(action)
             winner = yield from gen
 
-        self.backup(winner, action)
+        yield from self.backup_deferred(winner, action)
         return winner
 
     def batched_expand_and_simulate(self, action):
@@ -139,6 +151,6 @@ class SearchNode(object):
 
         child = SearchNode(new_env)
         self.children[action] = child
-        child.backup(winner)
+        yield from child.backup_deferred(winner)
 
         return winner
