@@ -1,5 +1,4 @@
 import silence_tensorflow
-from Agent import RandomAgent
 from anthony_net.NNAgent import NNAgent
 from mcts.MCTSAgent import MCTSAgent
 import gym
@@ -19,20 +18,16 @@ from mcts.SearchNode import SearchNode
 from multiprocessing import Pool
 import configparser
 from copy import deepcopy
+import os
 
 
 from scheduler.scheduler import Scheduler, Task, DoneTask, FinalHandler
 from scheduler.handlers import (
-    HandleMCTSExpandAndSimulate,
-    HandleExpandAndSimulate,
+    HandleRollout,
     HandleNNEval,
     Handler,
 )
-from scheduler.tasks import (
-    MCTSExpandAndSimulate,
-    ExpandAndSimulate,
-    NNEval
-)
+from scheduler.tasks import NNEval
 
 
 def play_match(env, agent, opponent):
@@ -94,10 +89,7 @@ class HandleInit(Handler):
                 player_color = player.WHITE
 
             depth = self.depths[random.randint(0, len(self.depths) - 1)]
-            if depth == 0:
-                opponent = RandomAgent(self.board_size)
-            else:
-                opponent = MCTSAgent(depth=depth, board_size=self.board_size)
+            opponent = MCTSAgent(depth=depth, board_size=self.board_size)
 
             env = gym.make(
                 "hex-v0",
@@ -115,13 +107,9 @@ class HandleInit(Handler):
 class HandleDone(FinalHandler):
     allowed_task = DoneTask
 
-    def __init__(self, config):
+    def __init__(self, ratings, config):
         board_size = int(config["GLOBAL"]["board_size"])
-        rating_file = config["mctsEval"]["eval_file"]
-        rating_file = rating_file.format(board_size=board_size)
-        with open(rating_file, "r") as rating_f:
-            mcts_ratings = json.load(rating_f)
-        self.mcts_ratings = mcts_ratings
+        self.mcts_ratings = ratings
 
     def handle_batch(self, batch):
         for task in batch:
@@ -129,8 +117,10 @@ class HandleDone(FinalHandler):
             opponent = task.metadata["opponent"]
             agent = task.metadata["agent"]
 
-            rating = self.mcts_ratings[str(opponent)]
-            op_rating = trueskill.Rating(rating["mu"], rating["sigma"])
+            idx = self.mcts_ratings["depth"].index(opponent.depth)
+            mu = self.mcts_ratings["mu"][idx]
+            sigma = self.mcts_ratings["sigma"][idx]
+            op_rating = trueskill.Rating(mu, sigma)
             if result == -1:
                 _, agent.rating = trueskill.rate_1vs1(
                     op_rating, agent.rating)
@@ -146,6 +136,23 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('ExIt.ini')
 
+    board_size = int(config["GLOBAL"]["board_size"])
+    log_dir = config["GLOBAL"]["log_dir"]
+    out_dir = config["apprenticeEval"]["dir"]
+    out_dir = out_dir.format(board_size=board_size)
+    base_dir = "/".join([log_dir, out_dir])
+    os.makedirs(base_dir, exist_ok=True)
+
+    mcts_location = config["mctsEval"]["dir"]
+    mcts_location = mcts_location.format(board_size=board_size)
+    mcts_rating_file = config["mctsEval"]["eval_file"]
+    mcts_rating_file = "/".join([log_dir, mcts_location, mcts_rating_file])
+
+    exit_dir = config["ExpertIteration"]["dir"]
+    exit_dir = exit_dir.format(board_size=board_size)
+    step_location = config["ExpertIteration"]["step_location"]
+    agent_template = "/".join([log_dir, exit_dir, step_location, "model.h5"])
+
     trueskill.setup(mu=float(config["TrueSkill"]["initial_mu"]),
                     sigma=float(config["TrueSkill"]["initial_sigma"]),
                     beta=float(config["TrueSkill"]["beta"]),
@@ -154,20 +161,23 @@ if __name__ == "__main__":
                         config["TrueSkill"]["draw_probability"]),
                     backend="scipy")
 
+    with open(mcts_rating_file, "r") as ratings_f:
+        mcts_ratings = json.load(ratings_f)
+
     num_threads = int(config["GLOBAL"]["num_threads"])
     iterations = int(config["ExpertIteration"]["iterations"])
 
     model_files = [
-        f"logs/iteration_{idx}/model.h5" for idx in range(iterations)]
+        agent_template.format(idx=idx) for idx in range(iterations)]
     agents = [NNAgent(model_file) for model_file in model_files]
 
-    num_matches = int(config["expertEval"]["num_matches"])
+    num_matches = int(config["GLOBAL"]["num_matches"])
 
     with Pool(num_threads) as workers:
         handlers = [
             HandleInit(config),
-            HandleMCTSExpandAndSimulate(workers, config),
-            HandleDone(config),
+            HandleRollout(workers, config),
+            HandleDone(mcts_ratings, config),
             HandleNNEval(None)
         ]
         sched = Scheduler(handlers)
@@ -181,7 +191,7 @@ if __name__ == "__main__":
             queue = [InitGame(idx, nn_agent)
                      for idx in range(num_matches)]
 
-            max_active = int(config["apprenticeEval"]["active_simulations"])
+            max_active = int(config["GLOBAL"]["active_simulations"])
             active_tasks = queue[:max_active]
             queue = queue[max_active:]
             queue_bar = tqdm.tqdm(
@@ -208,7 +218,7 @@ if __name__ == "__main__":
         "model": [model for model in model_files]
     }
 
-    board_size = int(config["GLOBAL"]["board_size"])
     eval_file = config["apprenticeEval"]["eval_file"]
-    with open(eval_file.format(board_size=board_size), "w") as json_file:
+    eval_file = "/".join([base_dir, eval_file])
+    with open(eval_file, "w") as json_file:
         json.dump(ratings, json_file)
