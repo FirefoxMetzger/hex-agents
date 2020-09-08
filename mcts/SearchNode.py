@@ -28,10 +28,10 @@ class SearchNode(object):
         board_size = env.board.shape[1]
         self.greedy_Q = np.inf * np.ones(board_size ** 2,
                                          dtype=np.float32)
-        # self.greedy_Q = self.greedy_Q.tolist()
+        self.greedy_Q = self.greedy_Q.tolist()
         self.Q = np.inf * np.ones(board_size ** 2,
                                   dtype=np.float32)
-        # self.Q = self.Q.tolist()
+        self.Q = self.Q.tolist()
         self.agent = RandomAgent(board_size=board_size)
 
     def add_leaf(self):
@@ -59,11 +59,21 @@ class SearchNode(object):
             return self.Q[action]
 
     def select(self):
-        action_scores = self.Q[self.available_actions]
-        best_actions = np.where(action_scores == np.max(action_scores))[0]
-        idx = int(random.random() * len(best_actions))
-        best_action_idx = best_actions[idx]
-        return self.available_actions[best_action_idx]
+        best_actions = list()
+        best_q = self.Q[self.available_actions[0]]
+        for action in self.available_actions:
+            if best_q == self.Q[action]:
+                best_actions.append(action)
+            elif self.Q[action] > best_q:
+                best_action = [action]
+                best_q = self.Q[action]
+
+        if len(best_actions) > 1:
+            best_action = best_actions[random.randint(0, len(best_actions)-1)]
+        else:
+            best_action = best_actions[0]
+
+        return best_action
 
     def expand(self, action):
         new_env = deepcopy(self.env)
@@ -100,6 +110,18 @@ class SearchNode(object):
         if action is not None:
             self.update_action_value(action)
 
+    def backup_deferred(self, winner, action=None):
+        self.total_simulations += 1
+        if self.active_player == winner:
+            self.total_wins += 1
+
+        if action is not None:
+            yield from self.update_action_value_deferred(action)
+
+    def update_action_value_deferred(self, action):
+        return self.update_action_value(action)
+        yield
+
     def update_action_value(self, action):
         child = self.children[action]
 
@@ -115,7 +137,7 @@ class SearchNode(object):
     def add_leaf_deferred(self):
         if self.is_terminal:
             winner = self.winner
-            self.backup(winner)
+            yield from self.backup_deferred(winner)
             return winner
 
         action = self.select()
@@ -127,7 +149,7 @@ class SearchNode(object):
             gen = self.batched_expand_and_simulate(action)
             winner = yield from gen
 
-        self.backup(winner, action)
+        yield from self.backup_deferred(winner, action)
         return winner
 
     def batched_expand_and_simulate(self, action):
@@ -139,6 +161,6 @@ class SearchNode(object):
 
         child = SearchNode(new_env)
         self.children[action] = child
-        child.backup(winner)
+        yield from child.backup_deferred(winner)
 
         return winner
