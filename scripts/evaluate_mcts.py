@@ -14,6 +14,7 @@ from multiprocessing import Pool
 import os
 
 from scheduler.scheduler import Scheduler, Task, DoneTask, FinalHandler
+from plotting import plot_expansions
 from scheduler.handlers import (
     HandleRollout,
     Handler
@@ -72,11 +73,19 @@ def play_match(env, agent, opponent):
 
 
 class InitGame(Task):
-    def __init__(self, idx, agent):
+    def __init__(self, idx, agent, agent_color):
         super(InitGame, self).__init__()
+
+        if agent_color == player.BLACK:
+            opponent_color = player.WHITE
+        else:
+            opponent_color = player.BLACK
+
         self.metadata = {
             "idx": idx,
-            "agent": agent
+            "agent": agent,
+            "agent_color": agent_color,
+            "opponent_color": opponent_color
         }
 
 
@@ -90,10 +99,7 @@ class HandleInit(Handler):
 
     def handle_batch(self, batch):
         for task in batch:
-            if random.random() > 0.5:
-                player_color = player.BLACK
-            else:
-                player_color = player.WHITE
+            player_color = task.metadata["agent_color"]
 
             depth = self.depths[random.randint(0, len(self.depths) - 1)]
             opponent = MCTSAgent(depth=depth, board_size=self.board_size)
@@ -120,10 +126,12 @@ class HandleDone(FinalHandler):
     def handle_batch(self, batch):
         for task in batch:
             result = task.metadata["result"]
+            agent_color = task.metadata["agent_color"]
+            opponent_color = task.metadata["opponent_color"]
             opponent_key = task.metadata["opponent"].depth
-            opponent = self.rating_agents[opponent_key]
+            opponent = self.rating_agents[opponent_color][opponent_key]
             agent_key = task.metadata["agent"].depth
-            agent = self.rating_agents[agent_key]
+            agent = self.rating_agents[agent_color][agent_key]
 
             if result == -1:
                 opponent, agent.rating = trueskill.rate_1vs1(
@@ -161,7 +169,10 @@ if __name__ == "__main__":
 
     depths = [0, 50, 100, 500, 1000, 1500, 2000,
               2500, 3000, 3500, 4000, 4500, 5000]
-    rating_agents = {depth: Agent() for depth in depths}
+    rating_agents = {
+        player.WHITE: {depth: Agent() for depth in depths},
+        player.BLACK: {depth: Agent() for depth in depths}
+    }
 
     num_threads = int(config["GLOBAL"]["num_threads"])
     with Pool(num_threads) as workers:
@@ -172,29 +183,36 @@ if __name__ == "__main__":
         ]
         sched = Scheduler(handlers)
 
-        agent_bar = tqdm.tqdm(
-            iter(depths),
-            desc="Agents",
-            total=len(depths),
-            leave=False)
         queue = list()
-        for depth in agent_bar:
+        for depth in depths:
             queue += [
                 InitGame(
                     idx,
                     MCTSAgent(
                         depth=depth,
                         board_size=board_size
-                    )
+                    ),
+                    player.WHITE
+                )
+                for idx in range(num_matches)
+            ]
+            queue += [
+                InitGame(
+                    idx,
+                    MCTSAgent(
+                        depth=depth,
+                        board_size=board_size
+                    ),
+                    player.BLACK
                 )
                 for idx in range(num_matches)
             ]
 
+        queue_bar = tqdm.tqdm(
+            total=len(queue),
+            desc="Games Played")
         active_tasks = queue[:max_active]
         queue = queue[max_active:]
-        queue_bar = tqdm.tqdm(
-            total=num_matches*len(depths),
-            desc="Games Played")
         while queue or active_tasks:
             if len(active_tasks) < max_active:
                 num_new = max_active - len(active_tasks)
@@ -209,12 +227,26 @@ if __name__ == "__main__":
             queue_bar.update(completed)
 
     ratings = {
-        "mu": [rating_agents[key].rating.mu for key in rating_agents],
-        "sigma": [rating_agents[key].rating.sigma for key in rating_agents],
-        "depth": [key for key in rating_agents]
+        color: {
+            "mu": list(),
+            "sigma": list(),
+            "depth": list()
+        } for color in [player.BLACK, player.WHITE]
     }
+
+    for color in [player.BLACK, player.WHITE]:
+        for depth in depths:
+            ratings[color]["mu"].append(rating_agents[color][depth].rating.mu)
+            ratings[color]["sigma"].append(
+                rating_agents[color][depth].rating.sigma
+            )
+        ratings[color]["depth"] = depths
 
     eval_file = config["mctsEval"]["eval_file"]
     eval_file = "/".join([base_dir, eval_file])
     with open(eval_file, "w") as json_file:
         json.dump(ratings, json_file)
+
+    plot_file = config["mctsEval"]["plot_file"]
+    plot_file = "/".join([base_dir, plot_file])
+    plot_expansions(ratings, plot_file, config)
