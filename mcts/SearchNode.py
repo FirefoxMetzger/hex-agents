@@ -65,7 +65,7 @@ class SearchNode(object):
             if best_q == self.Q[action]:
                 best_actions.append(action)
             elif self.Q[action] > best_q:
-                best_action = [action]
+                best_actions = [action]
                 best_q = self.Q[action]
 
         if len(best_actions) > 1:

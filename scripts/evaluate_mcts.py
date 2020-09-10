@@ -92,10 +92,9 @@ class InitGame(Task):
 class HandleInit(Handler):
     allowed_task = InitGame
 
-    def __init__(self, config):
+    def __init__(self, depths, config):
         self.board_size = int(config["GLOBAL"]["board_size"])
-        self.depths = [0, 50, 100, 500, 1000, 1500, 2000,
-                       2500, 3000, 3500, 4000, 4500, 5000]
+        self.depths = depths
 
     def handle_batch(self, batch):
         for task in batch:
@@ -177,7 +176,7 @@ if __name__ == "__main__":
     num_threads = int(config["GLOBAL"]["num_threads"])
     with Pool(num_threads) as workers:
         handlers = [
-            HandleInit(config),
+            HandleInit(depths, config),
             HandleRollout(workers, config),
             HandleDone(rating_agents, config)
         ]
