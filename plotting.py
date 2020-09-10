@@ -29,7 +29,7 @@ def plot_expansions(data, out_file, config):
     plt.savefig(out_file)
 
 
-def plt_iteration(data, out_file, config):
+def plot_iteration(data, out_file, config):
     board_size = int(config["GLOBAL"]["board_size"])
     width = float(config["Plotting"]["bar_width"])
 
@@ -37,9 +37,9 @@ def plt_iteration(data, out_file, config):
 
     for color in [player.BLACK, player.WHITE]:
         bar_width = -width if color == player.BLACK else width
-        idx = np.arange(len(mu), dtype=np.float_) + bar_width / 2
         mu = np.array(data[color]["mu"])
         sigma = np.array(data[color]["sigma"])
+        idx = np.arange(len(mu), dtype=np.float_) + bar_width / 2
 
         ax.bar(idx, mu, width, yerr=np.stack((sigma, sigma)))
 

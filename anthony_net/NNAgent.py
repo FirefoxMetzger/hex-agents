@@ -7,6 +7,8 @@ import gym
 import numpy as np
 from anthony_net.utils import convert_state
 
+from scheduler.tasks import NNEval
+
 
 class NNAgent(Agent):
     def __init__(self, model):
@@ -22,6 +24,9 @@ class NNAgent(Agent):
                 self.model = tf.keras.models.load_model(model)
         else:
             self.model = model
+
+        self.last_sim = None
+        self.best_action = None
 
     def act(self, state, active_player, info):
         game = HexGame(active_player, state, active_player)
@@ -65,6 +70,17 @@ class NNAgent(Agent):
         policy[black_moves, :] = policy_values[black_moves, :, player.BLACK]
         policy[white_moves, :] = policy_values[white_moves, :, player.WHITE]
         return policy
+
+    def update_root_state_deferred(self, info):
+        self.last_sim = info["sim"]
+        return
+        yield
+
+    def deferred_plan(self):
+        self.best_action = yield NNEval(self.last_sim)
+
+    def act_greedy(self, state, active_player, info):
+        return self.best_action
 
 
 if __name__ == "__main__":
