@@ -43,6 +43,11 @@ def plot_iteration(data, out_file, config):
 
         ax.bar(idx, mu, width, yerr=np.stack((sigma, sigma)))
 
+    it = data[color]["iterations"]
+
+    ax.set_xticks(it)
+    ax.set_xticklabels(it)
+
     ax.set_title(f"{board_size}x{board_size} Board")
     ax.set_xlabel("Iteration/Step")
     ax.set_ylabel("Trueskill Score")
