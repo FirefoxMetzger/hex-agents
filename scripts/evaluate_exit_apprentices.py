@@ -104,7 +104,10 @@ class HandleMultiNNEval(Handler):
 
             batch_players = players[indices]
             batch_boards = boards[indices]
-            scores[indices, ...] = nn_agent.get_scores(boards, players)
+            scores[indices, ...] = nn_agent.get_scores(
+                batch_boards,
+                batch_players
+            )
 
         actions = list()
         for score, possible in zip(scores, possible_actions):
