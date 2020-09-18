@@ -11,6 +11,9 @@ setup(
     install_requires=[
         'numpy >= 1.18.2',
         'matplotlib >= 3.2.1',
-        'tensorflow >= 2.2.0'
+        'tensorflow >= 2.2.0',
+        'trueskill',
+        'tqdm',
+        'sklearn'
     ]
 )
