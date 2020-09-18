@@ -8,6 +8,7 @@ import gym
 from Agent import RandomAgent
 from mcts.MCTSAgent import MCTSAgent
 from scheduler.scheduler import FinalHandler, Task, DoneTask, Handler
+from scheduler.tasks import NNEval
 
 
 def simulate(env, board_size=5):
@@ -64,21 +65,25 @@ class HandleDone(FinalHandler):
         self.rating_agents = rating_agents
 
     def get_ratings(self, task):
-        agent_color = task.metadata["agent_color"]
         opponent_color = task.metadata["opponent_color"]
         opponent_key = task.metadata["opponent"].depth
         opponent = self.rating_agents[opponent_color][opponent_key]
+        
+        agent_color = task.metadata["agent_color"]
         agent_key = task.metadata["agent"].depth
         agent = self.rating_agents[agent_color][agent_key]
+        
         return agent.rating, opponent.rating
 
     def get_result_storage(self, task):
-        agent_color = task.metadata["agent_color"]
         opponent_color = task.metadata["opponent_color"]
         opponent_key = task.metadata["opponent"].depth
         opponent = self.rating_agents[opponent_color][opponent_key]
+        
+        agent_color = task.metadata["agent_color"]
         agent_key = task.metadata["agent"].depth
         agent = self.rating_agents[agent_color][agent_key]
+        
         return agent, opponent
 
     def handle_batch(self, batch):
@@ -181,3 +186,44 @@ def play_match(env, agent, opponent):
     task = DoneTask()
     task.metadata["result"] = reward
     yield task
+
+
+class HandleMultiNNEval(Handler):
+    allowed_task = NNEval
+
+    def __init__(self, nn_agents):
+        self.nn_agents = nn_agents
+
+    def handle_batch(self, batch):
+        sub_batches = dict()
+
+        players = np.stack([task.sim.active_player for task in batch])
+        sims = [task.sim for task in batch]
+        boards = np.stack(convert_state_batch(sims))
+        possible_actions = [task.sim.get_possible_actions() for task in batch]
+        scores = np.empty((len(batch), batch[0].sim.board.size))
+
+        for idx, task in enumerate(batch):
+            iteration = task.metadata["iteration"]
+            if iteration not in sub_batches:
+                sub_batches[iteration] = list()
+
+            sub_batches[iteration].append(idx)
+
+        for iteration, batch in sub_batches.items():
+            nn_agent = self.nn_agents[iteration]
+            indices = np.asarray(batch)
+
+            batch_players = players[indices]
+            batch_boards = boards[indices]
+            scores[indices, ...] = nn_agent.get_scores(
+                batch_boards,
+                batch_players
+            )
+
+        actions = list()
+        for score, possible in zip(scores, possible_actions):
+            action_idx = np.argmax(score[possible])
+            actions.append(possible[action_idx])
+
+        return actions

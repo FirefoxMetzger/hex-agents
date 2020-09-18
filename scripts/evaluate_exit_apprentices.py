@@ -22,7 +22,7 @@ from scheduler.handlers import (
     Handler
 )
 from scheduler.tasks import NNEval
-from utils import InitGame, HandleDone, HandleInit, play_match
+from utils import InitGame, HandleDone, HandleInit, play_match, HandleMultiNNEval
 from plotting import plot_iteration
 from anthony_net.NNAgent import NNAgent
 from mcts.MCTSAgent import MCTSAgent
@@ -74,47 +74,6 @@ class ApprenticeHandleDone(HandleDone):
         agent_key = task.metadata["iteration"]
         agent = self.rating_agents[agent_color][agent_key]
         return agent, Agent()
-
-
-class HandleMultiNNEval(Handler):
-    allowed_task = NNEval
-
-    def __init__(self, nn_agents):
-        self.nn_agents = nn_agents
-
-    def handle_batch(self, batch):
-        sub_batches = dict()
-
-        players = np.stack([task.sim.active_player for task in batch])
-        sims = [task.sim for task in batch]
-        boards = np.stack(convert_state_batch(sims))
-        possible_actions = [task.sim.get_possible_actions() for task in batch]
-        scores = np.empty((len(batch), batch[0].sim.board.size))
-
-        for idx, task in enumerate(batch):
-            iteration = task.metadata["iteration"]
-            if iteration not in sub_batches:
-                sub_batches[iteration] = list()
-
-            sub_batches[iteration].append(idx)
-
-        for iteration, batch in sub_batches.items():
-            nn_agent = self.nn_agents[iteration]
-            indices = np.asarray(batch)
-
-            batch_players = players[indices]
-            batch_boards = boards[indices]
-            scores[indices, ...] = nn_agent.get_scores(
-                batch_boards,
-                batch_players
-            )
-
-        actions = list()
-        for score, possible in zip(scores, possible_actions):
-            action_idx = np.argmax(score[possible])
-            actions.append(possible[action_idx])
-
-        return actions
 
 
 if __name__ == "__main__":
