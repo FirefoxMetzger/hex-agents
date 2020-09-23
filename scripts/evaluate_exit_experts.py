@@ -21,127 +21,93 @@ from scheduler.handlers import (
     HandleNNPolicy,
     Handler
 )
+from scheduler.tasks import NNEval
+from utils import play_match, HandleDone, HandleInit, InitGame
+from plotting import plot_iteration
+from anthony_net.utils import convert_state_batch
 
 
-def play_match(env, agent, opponent):
-    state, info = env.reset()
+class ApprenticeHandleDone(HandleDone):
+    def __init__(self, rating_agents, config):
+        super(ApprenticeHandleDone, self).__init__(
+            rating_agents,
+            config
+        )
 
-    info_opponent = {
-        'last_move_opponent': None,
-        'last_move_player': env.previous_opponent_move
-    }
-    yield from opponent.update_root_state_deferred(info_opponent)
-
-    info = {
-        'last_move_opponent': env.previous_opponent_move,
-        'last_move_player': None
-    }
-    yield from agent.update_root_state_deferred(info)
-
-    done = False
-    while not done:
-        yield from agent.deferred_plan()
-        action = agent.act_greedy(None, None, None)
-
-        info_opponent = {
-            'last_move_opponent': action,
-            'last_move_player': None
-        }
-        yield from opponent.update_root_state_deferred(info_opponent)
-        info = {
-            'last_move_opponent': None,
-            'last_move_player': action
-        }
-        yield from agent.update_root_state_deferred(info)
-
-        yield from opponent.deferred_plan()
-        state, reward, done, info = env.step(action)
-
-        if not done:
-            info_opponent = {
-                'last_move_opponent': None,
-                'last_move_player': env.previous_opponent_move
-            }
-            yield from opponent.update_root_state_deferred(info_opponent)
-            info = {
-                'last_move_opponent': env.previous_opponent_move,
-                'last_move_player': None
-            }
-            yield from agent.update_root_state_deferred(info)
-
-    task = DoneTask()
-    task.metadata["result"] = reward
-    yield task
-
-
-class InitGame(Task):
-    def __init__(self, idx, agent):
-        super(InitGame, self).__init__()
-        self.metadata = {
-            "idx": idx,
-            "agent": agent
-        }
-
-
-class HandleInit(Handler):
-    allowed_task = InitGame
-
-    def __init__(self, config):
-        self.board_size = int(config["GLOBAL"]["board_size"])
-        self.depths = [0, 50, 100, 500, 1000, 1500, 2000,
-                       2500, 3000, 3500, 4000, 4500, 5000]
-
-    def handle_batch(self, batch):
-        for task in batch:
-            if random.random() > 0.5:
-                player_color = player.BLACK
-            else:
-                player_color = player.WHITE
-
-            depth = self.depths[random.randint(0, len(self.depths) - 1)]
-            opponent = MCTSAgent(depth=depth, board_size=self.board_size)
-
-            env = gym.make(
-                "hex-v0",
-                player_color=player_color,
-                opponent_policy=opponent.act_greedy,
-                board_size=self.board_size)
-
-            task.metadata["opponent"] = opponent
-
-            task.gen = play_match(env, task.metadata["agent"], opponent)
-
-        return [None] * len(batch)
-
-
-class HandleDone(FinalHandler):
-    allowed_task = DoneTask
-
-    def __init__(self, ratings, rating_agents, config):
         board_size = int(config["GLOBAL"]["board_size"])
-        self.mcts_ratings = ratings
-        self.rating_agents = rating_agents
+        log_dir = config["GLOBAL"]["log_dir"]
+        mcts_dir = config["mctsEval"]["dir"]
+        mcts_dir = mcts_dir.format(board_size=board_size)
+        mcts_rating_file = config["mctsEval"]["eval_file"]
+        mcts_rating_file = "/".join([log_dir, mcts_dir, mcts_rating_file])
+        with open(mcts_rating_file, "r") as ratings_f:
+            mcts_ratings = json.load(ratings_f)
+
+        self.mcts_ratings = {
+            player.WHITE: dict(),
+            player.BLACK: dict()
+        }
+
+        for key in self.mcts_ratings:
+            mus = mcts_ratings[str(int(key))]["mu"]
+            sigmas = mcts_ratings[str(int(key))]["sigma"]
+            depths = mcts_ratings[str(int(key))]["depth"]
+            for mu, sigma, depth in zip(mus, sigmas, depths):
+                self.mcts_ratings[key][depth] = trueskill.Rating(
+                    mu=mu, sigma=sigma)
+
+    def get_ratings(self, task):
+        opponent_color = task.metadata["opponent_color"]
+        opponent_key = task.metadata["opponent"].depth
+        opponent_rating = self.mcts_ratings[opponent_color][opponent_key]
+
+        agent_color = task.metadata["agent_color"]
+        agent_key = task.metadata["iteration"]
+        agent = self.rating_agents[agent_color][agent_key]
+
+        return agent.rating, opponent_rating
+
+    def get_result_storage(self, task):
+        agent_color = task.metadata["agent_color"]
+        agent_key = task.metadata["iteration"]
+        agent = self.rating_agents[agent_color][agent_key]
+        return agent, Agent()
+
+
+class HandleMultiNNEval(Handler):
+    allowed_task = NNEval
+
+    def __init__(self, nn_agents):
+        self.nn_agents = nn_agents
 
     def handle_batch(self, batch):
-        for task in batch:
-            result = task.metadata["result"]
-            opponent = task.metadata["opponent"]
-            nn_agent = task.metadata["agent"].agent
-            agent = self.rating_agents[nn_agent]
+        sub_batches = dict()
 
-            idx = self.mcts_ratings["depth"].index(opponent.depth)
-            mu = self.mcts_ratings["mu"][idx]
-            sigma = self.mcts_ratings["sigma"][idx]
-            op_rating = trueskill.Rating(mu, sigma)
-            if result == -1:
-                _, agent.rating = trueskill.rate_1vs1(
-                    op_rating, agent.rating)
-            elif result == 1:
-                agent.rating, _ = trueskill.rate_1vs1(
-                    agent.rating, op_rating)
-            else:
-                agent.rating, _ = trueskill.rate_1vs1(
-                    agent.rating, op_rating, drawn=True)
+        players = np.stack([task.sim.active_player for task in batch])
+        sims = [task.sim for task in batch]
+        boards = np.stack(convert_state_batch(sims))
+        possible_actions = [task.sim.get_possible_actions() for task in batch]
+        scores = np.empty((len(batch), batch[0].sim.board.size))
+
+        for idx, task in enumerate(batch):
+            iteration = task.metadata["iteration"]
+            if iteration not in sub_batches:
+                sub_batches[iteration] = list()
+
+            sub_batches[iteration].append(idx)
+
+        for iteration, batch in sub_batches.items():
+            nn_agent = self.nn_agents[iteration]
+            indices = np.asarray(batch)
+
+            batch_players = players[indices]
+            batch_boards = boards[indices]
+            scores[indices, ...] = nn_agent.get_scores(
+                batch_boards,
+                batch_players
+            )
+
+        return scores
 
 
 if __name__ == "__main__":
@@ -188,69 +154,85 @@ if __name__ == "__main__":
     rating_agents = {nn_agent: Agent() for nn_agent in nn_agents}
 
     num_threads = int(config["GLOBAL"]["num_threads"])
+    iterations = int(config["ExpertIteration"]["iterations"])
+
+    model_files = [agent_template.format(idx=idx) for idx in range(iterations)]
+    agents = [NNAgent(model_file) for model_file in model_files]
+    rating_agents = {
+        player.WHITE: {iteration: Agent() for iteration in range(iterations)},
+        player.BLACK: {iteration: Agent() for iteration in range(iterations)}
+    }
+    depths = [0, 50, 100, 500, 1000, 1500, 2000,
+              2500, 3000, 3500, 4000, 4500, 5000]
+
+    num_matches = int(config["GLOBAL"]["num_matches"])
+    queue = list()
+    for iteration in range(iterations):
+        nn_agent = agents[iteration]
+        add_to_queue = list()
+        add_to_queue += [InitGame(idx,
+                                  NMCTSAgent(
+                                      depth=depth,
+                                      board_size=board_size),
+                                  player.WHITE
+                                  )
+                         for idx in range(num_matches)]
+        add_to_queue += [InitGame(idx,
+                                  NMCTSAgent(
+                                      depth=depth,
+                                      board_size=board_size),
+                                  player.BLACK
+                                  )
+                         for idx in range(num_matches)]
+        for task in add_to_queue:
+            task.metadata["iteration"] = iteration
+
+        queue += add_to_queue
+
     with Pool(num_threads) as workers:
-        agent_bar = tqdm.tqdm(
-            iter(nn_agents),
-            desc="Agents",
-            total=len(nn_agents))
-        for nn_agent in agent_bar:
-            handlers = [
-                HandleInit(config),
-                HandleNNPolicy(nn_agent=nn_agent),
-                HandleRollout(
-                    workers=workers,
-                    config=config
-                ),
-                HandleDone(
-                    ratings=mcts_ratings,
-                    rating_agents=rating_agents,
-                    config=config
-                )
-            ]
-            sched = Scheduler(handlers)
+        handlers = [
+            HandleInit(depths, config),
+            HandleRollout(workers, config),
+            ApprenticeHandleDone(rating_agents, config),
+            HandleMultiNNEval(agents)
+        ]
+        sched = Scheduler(handlers)
 
-            queue = list()
-            for idx in range(num_matches):
-                queue.append(
-                    InitGame(
-                        idx,
-                        NMCTSAgent(
-                            depth=depth,
-                            board_size=board_size,
-                            agent=nn_agent
-                        )
-                    )
-                )
+        queue_bar = tqdm.tqdm(
+            total=len(queue),
+            desc="Games Played")
+        max_active = int(config["GLOBAL"]["active_simulations"])
+        active_tasks = queue[:max_active]
+        queue = queue[max_active:]
+        while queue or active_tasks:
+            if len(active_tasks) < max_active:
+                num_new = max_active - len(active_tasks)
+                num_new = min(num_new, len(queue))
+                new_tasks = queue[:num_new]
+                active_tasks += new_tasks
+                queue = queue[num_new:]
 
-            max_active = int(config["GLOBAL"]["active_simulations"])
-            active_tasks = queue[:max_active]
-            queue = queue[max_active:]
-            queue_bar = tqdm.tqdm(
-                total=num_matches,
-                desc="Games Played",
-                leave=False,
-                position=1)
-            while queue or active_tasks:
-                if len(active_tasks) < max_active:
-                    num_new = max_active - len(active_tasks)
-                    num_new = min(num_new, len(queue))
-                    new_tasks = queue[:num_new]
-                    active_tasks += new_tasks
-                    queue = queue[num_new:]
-
-                old_count = len(active_tasks)
-                active_tasks = sched.process(active_tasks)
-                completed = old_count - len(active_tasks)
-                queue_bar.update(completed)
+            old_count = len(active_tasks)
+            active_tasks = sched.process(active_tasks)
+            completed = old_count - len(active_tasks)
+            queue_bar.update(completed)
 
     ratings = {
-        "mu": [rating_agents[nn_agent].rating.mu for nn_agent in nn_agents],
-        "sigma": [rating_agents[nn_agent].rating.sigma
-                  for nn_agent in nn_agents],
-        "iteration": [idx for idx in range(len(nn_agents))]
+        player.WHITE: {"mu": [], "sigma": [], "iterations": []},
+        player.BLACK: {"mu": [], "sigma": [], "iterations": []}
     }
+
+    for key in ratings:
+        for it in range(iterations):
+            ratings[key]["mu"].append(rating_agents[key][it].rating.mu)
+            ratings[key]["sigma"].append(rating_agents[key][it].rating.sigma)
+        ratings[key]["iterations"] = [it for it in range(iterations)]
 
     eval_file = config["expertEval"]["iter_eval_file"]
     eval_file = "/".join([base_dir, eval_file])
     with open(eval_file, "w") as json_file:
         json.dump(ratings, json_file)
+
+    plot_file = config["expertEval"]["iter_plot_file"]
+    plot_file = "/".join([base_dir, plot_file])
+    plot_iteration(ratings, plot_file, config)

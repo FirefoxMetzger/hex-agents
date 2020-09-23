@@ -154,9 +154,7 @@ if __name__ == "__main__":
 
         queue_bar = tqdm.tqdm(
             total=len(queue),
-            desc="Games Played",
-            leave=False,
-            position=1)
+            desc="Games Played")
         max_active = int(config["GLOBAL"]["active_simulations"])
         active_tasks = queue[: max_active]
         queue = queue[max_active:]

@@ -9,6 +9,7 @@ from Agent import RandomAgent
 from mcts.MCTSAgent import MCTSAgent
 from scheduler.scheduler import FinalHandler, Task, DoneTask, Handler
 from scheduler.tasks import NNEval
+from anthony_net.utils import convert_state_batch
 
 
 def simulate(env, board_size=5):
@@ -68,22 +69,22 @@ class HandleDone(FinalHandler):
         opponent_color = task.metadata["opponent_color"]
         opponent_key = task.metadata["opponent"].depth
         opponent = self.rating_agents[opponent_color][opponent_key]
-        
+
         agent_color = task.metadata["agent_color"]
         agent_key = task.metadata["agent"].depth
         agent = self.rating_agents[agent_color][agent_key]
-        
+
         return agent.rating, opponent.rating
 
     def get_result_storage(self, task):
         opponent_color = task.metadata["opponent_color"]
         opponent_key = task.metadata["opponent"].depth
         opponent = self.rating_agents[opponent_color][opponent_key]
-        
+
         agent_color = task.metadata["agent_color"]
         agent_key = task.metadata["agent"].depth
         agent = self.rating_agents[agent_color][agent_key]
-        
+
         return agent, opponent
 
     def handle_batch(self, batch):

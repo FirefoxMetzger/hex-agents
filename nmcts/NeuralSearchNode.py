@@ -44,7 +44,7 @@ class NeuralSearchNode(SearchNode):
     def update_action_value_deferred(self, action):
         if self.network_policy is None:
             policy = yield NNEval(sim=self.env)
-            self.network_policy = policy.tolist()
+            self.network_policy = policy.tolist()    
 
         self.update_action_value(action)
 
